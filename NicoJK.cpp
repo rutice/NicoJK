@@ -64,7 +64,6 @@ void CNicoJK::TogglePlugin(bool bEnabled) {
 	}
 }
 
-
 void CNicoJK::StartJK(int jkID) {
 	StopJK();
 	isJK = true;
@@ -185,8 +184,8 @@ HWND CNicoJK::GetFullscreenWindow() {
 	TVTest::HostInfo hostInfo;
 	if (m_pApp->GetFullscreen() && m_pApp->GetHostInfo(&hostInfo)) {
 		wchar_t className[64];
-		wcsncpy_s(className, hostInfo.pszAppName, 48);
-		wcscat_s(className, L" Fullscreen");
+		lstrcpynW(className, hostInfo.pszAppName, 48);
+		lstrcatW(className, L" Fullscreen");
 
 		HWND hwnd = NULL;
 		while ((hwnd = FindWindowExW(NULL, hwnd, className, NULL)) != NULL) {
@@ -255,6 +254,11 @@ LRESULT CALLBACK CNicoJK::EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2
 	case TVTest::EVENT_FULLSCREENCHANGE:
 		if (pThis->m_pApp->IsPluginEnabled()) {
 			pThis->OnFullScreenChange();
+		}
+		return TRUE;
+	case TVTest::EVENT_DRIVERCHANGE:
+		if (pThis->m_pApp->IsPluginEnabled()) {
+			pThis->StopJK();
 		}
 		return TRUE;
 	case TVTest::EVENT_CHANNELCHANGE:
