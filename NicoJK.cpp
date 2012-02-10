@@ -16,7 +16,7 @@ bool CNicoJK::GetPluginInfo(TVTest::PluginInfo *pInfo) {
 	pInfo->Type           = TVTest::PLUGIN_TYPE_NORMAL;
 	pInfo->Flags          = 0;
 	pInfo->pszPluginName  = L"NicoJK";
-	pInfo->pszCopyright   = L"?";
+	pInfo->pszCopyright   = L"Public Domain";
 	pInfo->pszDescription = L"ニコニコ実況をSDKで表示";
 	return true;
 }
@@ -31,6 +31,12 @@ bool CNicoJK::Initialize() {
 	this_ = this;
 
 	isJK = false;
+
+	// 重ねるモード
+	cwMode_ = 1;
+	if (GetPrivateProfileInt(_T("Setting"), _T("useSDKAttach"), 0, szIniFileName_)) {
+		cwMode_ = 0;
+	}
 
 	CoInitialize(NULL);
 
@@ -107,10 +113,15 @@ void CNicoJK::StartJK(int jkID) {
 	}
 	
 	cw_->put_Transparent(VARIANT_TRUE);
-	cw_->AttachWindowByHandle(HandleToLong(target), &hr);
-	cw_->Start(channel_, &hr);
-
-	SetActiveWindow(target);
+	if (cwMode_) {
+		cw_->Start(channel_, &hr);
+		cw_->put_TopMost(VARIANT_TRUE);
+		cw_->put_Visible(VARIANT_TRUE);
+		AdjustCommentWindow();
+	} else {
+		cw_->AttachWindowByHandle(HandleToLong(target), &hr);
+		cw_->Start(channel_, &hr);
+	}
 }
 
 void CNicoJK::StopJK() {
@@ -129,18 +140,34 @@ void CNicoJK::StopJK() {
 	jk_ = NULL;
 }
 
-void CNicoJK::ForegroundCommentWindow() {
-#if 0
+void CNicoJK::AdjustCommentWindow() {
 	if (cw_) {
-		OLE_HANDLE cwhWnd;
-		cw_->get_hWnd(&cwhWnd);
-		if (cwhWnd) {
-			SetActiveWindow(m_pApp->GetAppWindow());
-			SetWindowPos(m_pApp->GetAppWindow(), (HWND)LongToHandle(cwhWnd), 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
-			SetWindowPos((HWND)LongToHandle(cwhWnd), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
+		HWND target = NULL;
+		if (m_pApp->GetFullscreen()) {
+			target = GetFullscreenWindow();
+			HRESULT hr;
+			cw_->AttachWindowByHandle(HandleToLong(target), &hr);
+			return ;
 		}
+		if (!target) {
+			target = this->GetNormalHWND();
+			if (target) {
+				target = FindWindowEx(m_pApp->GetAppWindow(), NULL, _T("TVTest Splitter"), NULL);
+				if (target) {
+					target = FindWindowEx(target, NULL, _T("TVTest View"), NULL);
+					if (target) {
+						target = FindWindowEx(target, NULL, _T("TVTest Video Container"), NULL);
+					}
+				}
+			}
+		}
+		RECT rc;
+		GetWindowRect(target, &rc);
+		cw_->put_X(rc.left);
+		cw_->put_Y(rc.top);
+		cw_->put_Width(rc.right - rc.left);
+		cw_->put_Height(rc.bottom - rc.top);
 	}
-#endif
 }
 
 HWND CNicoJK::GetFullscreenWindow() {
@@ -163,23 +190,7 @@ HWND CNicoJK::GetFullscreenWindow() {
 }
 
 HWND CNicoJK::GetNormalHWND() {
-#if 0
-	HWND target;
-	target = FindWindowEx(m_pApp->GetAppWindow(), NULL, _T("TVTest Splitter"), NULL);
-	if (target) {
-		target = FindWindowEx(target, NULL, _T("TVTest View"), NULL);
-		if (target) {
-			target = FindWindowEx(target, NULL, _T("TVTest Video Container"), NULL);
-		}
-	}
-	if (target) {
-		return target;
-	} else {
-		return m_pApp->GetAppWindow();
-	}
-#else
 	return m_pApp->GetAppWindow();
-#endif
 }
 
 void CNicoJK::OnChannelChange() {
@@ -198,13 +209,16 @@ void CNicoJK::OnChannelChange() {
 void CNicoJK::OnFullScreenChange() {
 	HRESULT hr;
 	if (cw_) {
-		if (m_pApp->GetFullscreen()) {
-			HWND hFull = GetFullscreenWindow();
-			cw_->AttachWindowByHandle(HandleToLong(hFull), &hr);
-			return ;
+		if (cwMode_) {
+			AdjustCommentWindow();
+		} else {
+			if (m_pApp->GetFullscreen()) {
+				HWND hFull = GetFullscreenWindow();
+				cw_->AttachWindowByHandle(HandleToLong(hFull), &hr);
+				return ;
+			}
+			cw_->AttachWindowByHandle(HandleToLong(GetNormalHWND()), &hr);
 		}
-		cw_->AttachWindowByHandle(HandleToLong(GetNormalHWND()), &hr);
-		ForegroundCommentWindow();
 	}
 }
 
@@ -261,10 +275,19 @@ BOOL CALLBACK CNicoJK::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LP
 
 	switch (uMsg) {
 	case WM_ACTIVATE:
-		if (LOWORD(wParam) != WA_INACTIVE) {
+		if (LOWORD(wParam) == WA_INACTIVE) {
 			if (pThis->m_pApp->IsPluginEnabled()) {
-				//pThis->ForegroundCommentWindow();
+				if (pThis->m_pApp->GetFullscreen()) {
+					pThis->AdjustCommentWindow();
+					return TRUE;
+				}
 			}
+		}
+		break;
+	case WM_MOVE:
+	case WM_SIZE:
+		if (pThis->m_pApp->IsPluginEnabled()) {
+			pThis->AdjustCommentWindow();
 		}
 		break;
 	}

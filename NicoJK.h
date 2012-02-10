@@ -31,6 +31,8 @@ class CNicoJK : public TVTest::CTVTestPlugin
 	// チャンネル変更時のウェイトタイマ
 	UINT_PTR timerID_;
 	static CNicoJK *this_; // static用
+	// 重ねるモード
+	int cwMode_;
 
 	static VOID CALLBACK OnServiceChangeTimer(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
 	static LRESULT CALLBACK EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2,void *pClientData);
@@ -41,7 +43,7 @@ class CNicoJK : public TVTest::CTVTestPlugin
 
 	void StartJK(int jkID);
 	void StopJK();
-	void ForegroundCommentWindow();
+	void AdjustCommentWindow();
 
 	HWND GetFullscreenWindow();
 	HWND GetNormalHWND();
