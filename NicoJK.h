@@ -38,6 +38,8 @@ class CNicoJK : public TVTest::CTVTestPlugin
 	static LRESULT CALLBACK EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2,void *pClientData);
 	static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
 
+	void TogglePlugin(bool bEnabled);
+
 	void OnChannelChange();
 	void OnFullScreenChange();
 

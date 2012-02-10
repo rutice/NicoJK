@@ -45,14 +45,25 @@ bool CNicoJK::Initialize() {
 	// ウィンドウコールバック関数を登録
 	m_pApp->SetWindowMessageCallback(WindowMsgCallback, this);
 
-	if (m_pApp->IsPluginEnabled()) {
-		TVTest::ChannelInfo info;
-		m_pApp->GetCurrentChannelInfo(&info);
-		StartJK(info.RemoteControlKeyID);
-	}
-
 	return true;
 }
+
+bool CNicoJK::Finalize() {
+	// 終了処理	
+	StopJK();
+
+	CoUninitialize();
+	return true;
+}
+
+void CNicoJK::TogglePlugin(bool bEnabled) {
+	if (bEnabled) {
+		OnChannelChange();
+	} else {
+		StopJK();
+	}
+}
+
 
 void CNicoJK::StartJK(int jkID) {
 	StopJK();
@@ -222,14 +233,6 @@ void CNicoJK::OnFullScreenChange() {
 	}
 }
 
-bool CNicoJK::Finalize() {
-	// 終了処理	
-	StopJK();
-
-	CoUninitialize();
-	return true;
-}
-
 // チャンネル切り替えから実況切り替えまでのタイマ
 VOID CALLBACK CNicoJK::OnServiceChangeTimer(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
 	if (this_) {
@@ -247,11 +250,7 @@ LRESULT CALLBACK CNicoJK::EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2
 
 	switch (Event) {
 	case TVTest::EVENT_PLUGINENABLE:
-		if (lParam1 != 0) {
-			pThis->OnChannelChange();
-		} else {
-			pThis->StopJK();
-		}
+		pThis->TogglePlugin(lParam1 != 0);
 		return TRUE;
 	case TVTest::EVENT_FULLSCREENCHANGE:
 		if (pThis->m_pApp->IsPluginEnabled()) {
@@ -260,10 +259,12 @@ LRESULT CALLBACK CNicoJK::EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2
 		return TRUE;
 	case TVTest::EVENT_CHANNELCHANGE:
 	case TVTest::EVENT_SERVICECHANGE:
-		if (pThis->timerID_) {
-			KillTimer(NULL, pThis->timerID_);
+		if (pThis->m_pApp->IsPluginEnabled()) {
+			if (pThis->timerID_) {
+				KillTimer(NULL, pThis->timerID_);
+			}
+			pThis->timerID_ = SetTimer(NULL, 0, 750, pThis->OnServiceChangeTimer);
 		}
-		pThis->timerID_ = SetTimer(NULL, 0, 750, pThis->OnServiceChangeTimer);
 		return TRUE;
 	}
 	return 0;
