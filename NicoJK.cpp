@@ -106,10 +106,9 @@ void CNicoJK::StartJK(int jkID) {
 		target = GetNormalHWND();
 	}
 	
-	cw_->Start(channel_, &hr);
-	cw_->AttachWindowByHandle(HandleToLong(target), &hr);
 	cw_->put_Transparent(VARIANT_TRUE);
-	cw_->put_TopMost(VARIANT_TRUE);
+	cw_->AttachWindowByHandle(HandleToLong(target), &hr);
+	cw_->Start(channel_, &hr);
 
 	SetActiveWindow(target);
 }
@@ -136,7 +135,6 @@ void CNicoJK::ForegroundCommentWindow() {
 		OLE_HANDLE cwhWnd;
 		cw_->get_hWnd(&cwhWnd);
 		if (cwhWnd) {
-			OutputDebugString(L"fore");
 			SetActiveWindow(m_pApp->GetAppWindow());
 			SetWindowPos(m_pApp->GetAppWindow(), (HWND)LongToHandle(cwhWnd), 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
 			SetWindowPos((HWND)LongToHandle(cwhWnd), HWND_TOPMOST, 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
@@ -145,22 +143,23 @@ void CNicoJK::ForegroundCommentWindow() {
 #endif
 }
 
-HWND CNicoJK::GetFullscreenWindow()
-{
-    TVTest::HostInfo hostInfo;
-    if (m_pApp->GetFullscreen() && m_pApp->GetHostInfo(&hostInfo)) {
-        TCHAR className[64];
-        ::lstrcpyn(className, hostInfo.pszAppName, 48);
-        ::lstrcat(className, L" Fullscreen");
+HWND CNicoJK::GetFullscreenWindow() {
+	TVTest::HostInfo hostInfo;
+	if (m_pApp->GetFullscreen() && m_pApp->GetHostInfo(&hostInfo)) {
+		wchar_t className[64];
+		wcsncpy_s(className, hostInfo.pszAppName, 48);
+		wcscat_s(className, L" Fullscreen");
 
-        HWND hwnd = NULL;
-        while ((hwnd = ::FindWindowEx(NULL, hwnd, className, NULL)) != NULL) {
-            DWORD pid;
-            ::GetWindowThreadProcessId(hwnd, &pid);
-            if (pid == ::GetCurrentProcessId()) return hwnd;
-        }
-    }
-    return NULL;
+		HWND hwnd = NULL;
+		while ((hwnd = FindWindowExW(NULL, hwnd, className, NULL)) != NULL) {
+			DWORD pid;
+			GetWindowThreadProcessId(hwnd, &pid);
+			if (pid == GetCurrentProcessId()) {
+				return hwnd;
+			}
+		}
+	}
+	return NULL;
 }
 
 HWND CNicoJK::GetNormalHWND() {
@@ -188,19 +187,17 @@ void CNicoJK::OnChannelChange() {
 	m_pApp->GetCurrentChannelInfo(&info);
 	OutputDebugStringW(info.szChannelName);
 
-	long jkID = GetPrivateProfileInt(_T("Setting"), info.szChannelName, -1, szIniFileName_);
-	if (jkID == -1) {
-	}
-
+	int jkID = GetPrivateProfileInt(_T("Setting"), info.szChannelName, -1, szIniFileName_);
 	if (jkID != -1) {
 		StartJK(jkID);
+	} else {
+		StopJK();
 	}
 }
 
 void CNicoJK::OnFullScreenChange() {
 	HRESULT hr;
 	if (cw_) {
-		cw_->DetachWindow();
 		if (m_pApp->GetFullscreen()) {
 			HWND hFull = GetFullscreenWindow();
 			cw_->AttachWindowByHandle(HandleToLong(hFull), &hr);
@@ -211,8 +208,7 @@ void CNicoJK::OnFullScreenChange() {
 	}
 }
 
-bool CNicoJK::Finalize()
-{
+bool CNicoJK::Finalize() {
 	// 終了処理	
 	StopJK();
 
@@ -261,10 +257,10 @@ LRESULT CALLBACK CNicoJK::EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2
 
 BOOL CALLBACK CNicoJK::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData)
 {
-    CNicoJK *pThis = reinterpret_cast<CNicoJK*>(pUserData);
+	CNicoJK *pThis = static_cast<CNicoJK*>(pUserData);
 
-    switch (uMsg) {
-    case WM_ACTIVATE:
+	switch (uMsg) {
+	case WM_ACTIVATE:
 		if (LOWORD(wParam) != WA_INACTIVE) {
 			if (pThis->m_pApp->IsPluginEnabled()) {
 				//pThis->ForegroundCommentWindow();
