@@ -37,6 +37,9 @@ https://github.com/rutice/NicoJK/downloads
 https://github.com/rutice/NicoJK
 
 ■更新履歴
+rev.6
+コメントの位置調整方法を変えた（わりと決め打ちに）
+
 rev.5
 コメントの勢いを見れるウィンドウを実装
 

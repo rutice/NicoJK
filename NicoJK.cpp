@@ -10,6 +10,22 @@
 #include "resource.h"
 #include <WindowsX.h>
 
+#include <stdarg.h>
+#ifdef _DEBUG
+inline void dprintf_real( const _TCHAR * fmt, ... )
+{
+  _TCHAR buf[1024];
+  va_list ap;
+  va_start(ap, fmt);
+  _vsntprintf_s(buf, 1024, fmt, ap);
+  va_end(ap);
+  OutputDebugString(buf);
+}
+#  define dprintf dprintf_real
+#else
+#  define dprintf __noop
+#endif
+
 // static変数
 CNicoJK *CNicoJK::this_;
 
@@ -168,30 +184,12 @@ void CNicoJK::AdjustCommentWindow() {
 			cw_->AttachWindowByHandle(HandleToLong(target), &hr);
 			return ;
 		}
-		HWND tmp;
-		if (!target) {
-			target = this->GetNormalHWND();
-			if (target) {
-				tmp = FindWindowEx(m_pApp->GetAppWindow(), NULL, _T("TVTest Splitter"), NULL);
-				if (tmp) {
-					target = tmp;
-					tmp = FindWindowEx(target, NULL, _T("TVTest View"), NULL);
-					if (tmp) {
-						target = tmp;
-						tmp = FindWindowEx(target, NULL, _T("TVTest Video Container"), NULL);
-						if (target) {
-							target = tmp;
-						}
-					}
-				}
-			}
-		}
 		RECT rc;
-		GetWindowRect(target, &rc);
-		cw_->put_X(rc.left);
-		cw_->put_Y(rc.top);
-		cw_->put_Width(rc.right - rc.left);
-		cw_->put_Height(rc.bottom - rc.top);
+		GetWindowRect(m_pApp->GetAppWindow(), &rc);
+		cw_->put_X(rc.left + 10);
+		cw_->put_Y(rc.top + 22);
+		cw_->put_Width(rc.right - rc.left - 20);
+		cw_->put_Height(rc.bottom - rc.top - 44);
 	}
 }
 
