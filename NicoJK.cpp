@@ -7,6 +7,8 @@
 
 #include "stdafx.h"
 #include "NicoJK.h"
+#include "resource.h"
+#include <WindowsX.h>
 
 // static変数
 CNicoJK *CNicoJK::this_;
@@ -40,6 +42,10 @@ bool CNicoJK::Initialize() {
 
 	CoInitialize(NULL);
 
+	// 勢い窓作成
+	hForce_ = CreateDialogParam(g_hinstDLL, MAKEINTRESOURCE(IDD_FORCE),
+									 NULL, (DLGPROC)ForceDialogProc, (LPARAM)this);
+
 	// イベントコールバック関数を登録
 	m_pApp->SetEventCallback(EventCallback, this);
 	// ウィンドウコールバック関数を登録
@@ -49,8 +55,10 @@ bool CNicoJK::Initialize() {
 }
 
 bool CNicoJK::Finalize() {
-	// 終了処理	
+	// 終了処理
 	StopJK();
+
+	DestroyWindow(hForce_);
 
 	CoUninitialize();
 	return true;
@@ -59,39 +67,40 @@ bool CNicoJK::Finalize() {
 void CNicoJK::TogglePlugin(bool bEnabled) {
 	if (bEnabled) {
 		OnChannelChange();
+		PostMessage(hForce_, WM_TIMER, TIMER_UPDATE, 0L);
+		ShowWindow(hForce_, SW_SHOW);
 	} else {
+		ShowWindow(hForce_, SW_HIDE);
 		StopJK();
 	}
 }
 
 void CNicoJK::StartJK(int jkID) {
 	StopJK();
-	isJK = true;
 
 	HRESULT hr;
 	jk_.CreateInstance(CLSID_JKNiCOM);
 	if (!jk_) {
 		MessageBox(NULL, _T("ニコニコ実況SDKが入ってないかも。"), NULL, MB_OK);
-		isJK = false;
-		return ;
+		return;
 	}
 
 	long val;
 	jk_->GetCurrentVersion(&val);
 	if (val < 110) {
 		MessageBox(NULL, _T("ニコニコ実況SDKが古いかも。"), NULL, MB_OK);
-		jk_.Release();
-		isJK = false;
-		return ;
+		jk_ = NULL;
+		return;
 	}
 
 	jk_->get_Channels(&channels_);
 	if (!channels_) {
 		MessageBox(NULL, _T("チャンネル一覧がとれませんでした。"), NULL, MB_OK);
-		jk_.Release();
-		isJK = false;
+		jk_ = NULL;		
 		return ;
 	}
+	
+	isJK = true;
 
 	long count;
 	channels_->get_Count(&count);
@@ -159,14 +168,20 @@ void CNicoJK::AdjustCommentWindow() {
 			cw_->AttachWindowByHandle(HandleToLong(target), &hr);
 			return ;
 		}
+		HWND tmp;
 		if (!target) {
 			target = this->GetNormalHWND();
 			if (target) {
-				target = FindWindowEx(m_pApp->GetAppWindow(), NULL, _T("TVTest Splitter"), NULL);
-				if (target) {
-					target = FindWindowEx(target, NULL, _T("TVTest View"), NULL);
-					if (target) {
-						target = FindWindowEx(target, NULL, _T("TVTest Video Container"), NULL);
+				tmp = FindWindowEx(m_pApp->GetAppWindow(), NULL, _T("TVTest Splitter"), NULL);
+				if (tmp) {
+					target = tmp;
+					tmp = FindWindowEx(target, NULL, _T("TVTest View"), NULL);
+					if (tmp) {
+						target = tmp;
+						tmp = FindWindowEx(target, NULL, _T("TVTest Video Container"), NULL);
+						if (target) {
+							target = tmp;
+						}
 					}
 				}
 			}
@@ -294,6 +309,101 @@ BOOL CALLBACK CNicoJK::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LP
 		if (pThis->m_pApp->IsPluginEnabled()) {
 			pThis->AdjustCommentWindow();
 		}
+		break;
+	}
+	return FALSE;
+}
+
+// 勢い窓関連
+BOOL CNicoJK::ForceDialog_UpdateForce(HWND hWnd) {
+	HWND hList = GetDlgItem(hWnd, IDC_FORCELIST);
+	ListBox_ResetContent(hList);
+
+	IChannelCollectionPtr cc;
+	if (jk_) {
+		jk_->get_Channels(&cc);
+	} else {
+		IJKNiCOMPtr jk;
+		jk.CreateInstance(CLSID_JKNiCOM);
+		jk->get_Channels(&cc);
+	}
+	if (cc) {
+		long count;
+		cc->get_Count(&count);
+		for (long i=0; i<count; i++) {
+			IChannelPtr c;
+			cc->Item(i, &c);
+			BSTR chName;
+			c->get_Name(&chName);
+			long jkVal;
+			c->get_Number(&jkVal);
+			long force;
+			c->get_ThreadForce(&force);
+
+			wchar_t sz[1024];
+			wsprintfW(sz, L"jk%d (%s) 勢い：%d", jkVal, chName, force);
+			ListBox_AddString(hList, sz);
+			SysFreeString(chName);
+		}
+	}
+	return TRUE;
+}
+
+BOOL CNicoJK::ForceDialog_OnSelChange(HWND hList) {
+	int selected = ListBox_GetCurSel(hList);
+	if (selected != LB_ERR) {
+		TCHAR sz[1024];
+		int len = ListBox_GetTextLen(hList, selected);
+		if (3 < len && len < 1024) {
+			ListBox_GetText(hList, selected, sz);
+			if (_tcsncmp(sz, _T("jk"), 2) == 0) {
+				int jkID = _ttoi(sz + 2);
+				
+				TVTest::ChannelInfo info;
+				// なんとなく200まで
+				for (int i=0; i<200; i++) {
+					if (m_pApp->GetChannelInfo(m_pApp->GetTuningSpace(), i, &info)) {
+						int chJK = GetPrivateProfileIntW(_T("Setting"), info.szChannelName, -1, szIniFileName_);
+						// 実況IDが一致するチャンネルに切替
+						if (jkID == chJK) {
+							m_pApp->GetCurrentChannelInfo(&info);
+							m_pApp->SetChannel(m_pApp->GetTuningSpace(), i);
+							return TRUE;
+						}
+					}
+				}
+			}
+		}
+	}
+	return FALSE;
+}
+
+INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPARAM lparam) {
+	CNicoJK *pThis = (CNicoJK*)GetWindowLongPtr(hwnd, DWL_USER);
+
+	switch(uMsg) {
+	case WM_INITDIALOG:
+		SetWindowLongPtr(hwnd, DWL_USER, lparam);
+		SetTimer(hwnd, TIMER_UPDATE, 20000, NULL);
+		return TRUE;
+	case WM_CLOSE:
+		EndDialog(hwnd, IDOK);
+		break;
+	case WM_TIMER:
+		if (pThis) {
+			// 勢いを更新する
+			return pThis->ForceDialog_UpdateForce(hwnd);
+		}
+		break;
+	case WM_COMMAND:
+		if (HIWORD(wparam) == LBN_SELCHANGE) {
+			if (pThis) {
+				// リストで選択したチャンネルに切り替える
+				return pThis->ForceDialog_OnSelChange((HWND)lparam);
+			}
+		}
+		break;
+	default:
 		break;
 	}
 	return FALSE;
