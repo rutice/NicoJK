@@ -74,6 +74,7 @@ bool CNicoJK::Finalize() {
 	// 終了処理
 	StopJK();
 
+	SendMessage(hForce_, WM_CLOSE, 0L, 0L);
 	DestroyWindow(hForce_);
 
 	CoUninitialize();
@@ -381,11 +382,35 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 
 	switch(uMsg) {
 	case WM_INITDIALOG:
-		SetWindowLongPtr(hwnd, DWL_USER, lparam);
-		SetTimer(hwnd, TIMER_UPDATE, 20000, NULL);
+		{
+			pThis = (CNicoJK*)lparam;
+			SetWindowLongPtr(hwnd, DWL_USER, lparam);
+			SetTimer(hwnd, TIMER_UPDATE, 20000, NULL);
+			// 位置を復元
+			int iX = GetPrivateProfileInt(_T("Window"), _T("ForceX"), INT_MAX, pThis->szIniFileName_);
+			int iY = GetPrivateProfileInt(_T("Window"), _T("ForceY"), INT_MAX, pThis->szIniFileName_);
+			HMONITOR hMon = ::MonitorFromWindow(pThis->m_pApp->GetAppWindow(), MONITOR_DEFAULTTONEAREST);
+			MONITORINFO mi;
+			mi.cbSize = sizeof(MONITORINFO);
+			if (::GetMonitorInfo(hMon, &mi)) {
+				if (mi.rcMonitor.left <= iX && iX < mi.rcMonitor.right
+					&& mi.rcMonitor.top <= iY && iY < mi.rcMonitor.bottom) {
+					SetWindowPos(hwnd, NULL, iX, iY, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+				}
+			}
+		}
 		return TRUE;
 	case WM_CLOSE:
-		EndDialog(hwnd, IDOK);
+		{
+			RECT rc;
+			GetWindowRect(hwnd, &rc);
+			TCHAR sz[24];
+			wsprintf(sz, _T("%d"), rc.left);
+			WritePrivateProfileString(_T("Window"), _T("ForceX"), sz, pThis->szIniFileName_);
+			wsprintf(sz, _T("%d"), rc.top);
+			WritePrivateProfileString(_T("Window"), _T("ForceY"), sz, pThis->szIniFileName_);
+			EndDialog(hwnd, IDOK);
+		}
 		break;
 	case WM_TIMER:
 		if (pThis) {
