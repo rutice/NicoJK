@@ -8,6 +8,7 @@
 
 #define TVTEST_PLUGIN_CLASS_IMPLEMENT
 #include "TVTestPlugin.h"
+#include "CommentWindow.h"
 
 // ライブラリ
 #pragma comment(lib, "shlwapi.lib")
@@ -39,6 +40,10 @@ class CNicoJK : public TVTest::CTVTestPlugin
 
 	// 勢い窓
 	HWND hForce_;
+
+	// 独自実装用
+	bool useSDK_;
+	Cjk *jkcw_;
 
 	static VOID CALLBACK OnServiceChangeTimer(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
 	static LRESULT CALLBACK EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2,void *pClientData);

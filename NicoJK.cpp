@@ -8,6 +8,7 @@
 #include "stdafx.h"
 #include "NicoJK.h"
 #include "resource.h"
+#include "CommentWindow.h"
 #include <WindowsX.h>
 
 #include <stdarg.h>
@@ -56,7 +57,13 @@ bool CNicoJK::Initialize() {
 		cwMode_ = 0;
 	}
 
+	// 独自実装？
+	useSDK_ = (bool)GetPrivateProfileInt(_T("Setting"), _T("useSDK"), 1, szIniFileName_);
+	jkcw_ = new Cjk(m_pApp);
+
 	CoInitialize(NULL);
+	WSADATA wsaData;
+	WSAStartup(MAKEWORD(1, 1), &wsaData);
 
 	// 勢い窓作成
 	hForce_ = CreateDialogParam(g_hinstDLL, MAKEINTRESOURCE(IDD_FORCE),
@@ -77,6 +84,9 @@ bool CNicoJK::Finalize() {
 	SendMessage(hForce_, WM_CLOSE, 0L, 0L);
 	DestroyWindow(hForce_);
 
+	delete jkcw_;
+
+	WSACleanup();
 	CoUninitialize();
 	return true;
 }
@@ -95,12 +105,19 @@ void CNicoJK::TogglePlugin(bool bEnabled) {
 void CNicoJK::StartJK(int jkID) {
 	StopJK();
 
+	if (jkID > 100 || !useSDK_) {
+		jkcw_->Open(jkID);
+		return;
+	}
+
 	HRESULT hr;
 	jk_.CreateInstance(CLSID_JKNiCOM);
 	if (!jk_) {
 		MessageBox(NULL, _T("ニコニコ実況SDKが入ってないかも。"), NULL, MB_OK);
 		return;
 	}
+
+	isJK = true;
 
 	long val;
 	jk_->GetCurrentVersion(&val);
@@ -116,8 +133,6 @@ void CNicoJK::StartJK(int jkID) {
 		jk_ = NULL;		
 		return ;
 	}
-	
-	isJK = true;
 
 	long count;
 	channels_->get_Count(&count);
@@ -161,6 +176,11 @@ void CNicoJK::StartJK(int jkID) {
 }
 
 void CNicoJK::StopJK() {
+	if (!isJK && !useSDK_) {
+		jkcw_->Destroy();
+		return;
+	}
+
 	if (isJK == false) {
 		return;
 	}
@@ -222,7 +242,11 @@ void CNicoJK::OnChannelChange() {
 	m_pApp->GetCurrentChannelInfo(&info);
 	OutputDebugStringW(info.szChannelName);
 
-	int jkID = GetPrivateProfileInt(_T("Setting"), info.szChannelName, -1, szIniFileName_);
+	int jkID = GetPrivateProfileInt(_T("Channels"), info.szChannelName, -1, szIniFileName_);
+	if (jkID == -1) {
+		jkID = GetPrivateProfileInt(_T("Setting"), info.szChannelName, -1, szIniFileName_);
+	}
+
 	if (jkID != -1) {
 		StartJK(jkID);
 	} else {
@@ -260,7 +284,9 @@ VOID CALLBACK CNicoJK::OnServiceChangeTimer(HWND hwnd, UINT uMsg, UINT_PTR idEve
 LRESULT CALLBACK CNicoJK::EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2,void *pClientData)
 {
 	CNicoJK *pThis = static_cast<CNicoJK*>(pClientData);
-
+	if (pThis->useSDK_ == 0 && pThis->jkcw_) {
+		pThis->jkcw_->EventCallback(Event, lParam1, lParam2);
+	}
 	switch (Event) {
 	case TVTest::EVENT_PLUGINENABLE:
 		pThis->TogglePlugin(lParam1 != 0);
@@ -291,7 +317,9 @@ LRESULT CALLBACK CNicoJK::EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2
 BOOL CALLBACK CNicoJK::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData)
 {
 	CNicoJK *pThis = static_cast<CNicoJK*>(pUserData);
-
+	if (pThis->useSDK_ == 0 && pThis->jkcw_) {
+		pThis->jkcw_->WindowMsgCallback(hwnd, uMsg, wParam, lParam, pResult);
+	}
 	switch (uMsg) {
 	case WM_ACTIVATE:
 		if (LOWORD(wParam) == WA_INACTIVE) {
@@ -362,7 +390,10 @@ BOOL CNicoJK::ForceDialog_OnSelChange(HWND hList) {
 				// なんとなく200まで
 				for (int i=0; i<200; i++) {
 					if (m_pApp->GetChannelInfo(m_pApp->GetTuningSpace(), i, &info)) {
-						int chJK = GetPrivateProfileIntW(_T("Setting"), info.szChannelName, -1, szIniFileName_);
+						int chJK = GetPrivateProfileIntW(_T("Channels"), info.szChannelName, -1, szIniFileName_);
+						if (chJK == -1) {
+							chJK = GetPrivateProfileIntW(_T("Setting"), info.szChannelName, -1, szIniFileName_);
+						}
 						// 実況IDが一致するチャンネルに切替
 						if (jkID == chJK) {
 							m_pApp->GetCurrentChannelInfo(&info);
@@ -379,7 +410,6 @@ BOOL CNicoJK::ForceDialog_OnSelChange(HWND hList) {
 
 INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPARAM lparam) {
 	CNicoJK *pThis = (CNicoJK*)GetWindowLongPtr(hwnd, DWL_USER);
-
 	switch(uMsg) {
 	case WM_INITDIALOG:
 		{
