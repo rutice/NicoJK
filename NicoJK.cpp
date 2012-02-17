@@ -329,6 +329,10 @@ BOOL CALLBACK CNicoJK::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LP
 					return TRUE;
 				}
 			}
+		} else {
+			if (pThis->m_pApp->IsPluginEnabled()) {
+				SetWindowPos(pThis->hForce_, pThis->m_pApp->GetAppWindow(), 0, 0, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOMOVE);
+			}
 		}
 		break;
 	case WM_MOVE:
