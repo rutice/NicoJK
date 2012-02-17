@@ -1,12 +1,20 @@
 
 #pragma once
 
-#include <Windows.h>
-#include <tchar.h>
+#include "stdafx.h"
 #include "TVTestPlugin.h"
+
+#include <string>
+#include <vector>
+#include <list>
+#include <cstdio>
+#include <algorithm>
+#include <functional>
 
 #define jkTimerID 1021
 #define IDB_START 1
+
+#define COLOR_TRANSPARENT RGB(254, 254, 254)
 
 class Cjk {
 	TVTest::CTVTestApp *m_pApp;
@@ -17,9 +25,9 @@ class Cjk {
 	HBITMAP hBitmap_;
 	HBITMAP hPrevBitmap_;
 
-	int msPosition_;
-	int msSystime_;
-	int msPositionBase_;
+	DWORD msPosition_;
+	DWORD msSystime_;
+	DWORD msPositionBase_;
 
 	// í êMóp
 	int jkCh_;
@@ -39,8 +47,8 @@ public:
 	HWND GetFullscreenWindow();
 
 	void Open(int jkCh);
-	void Open(LPCTSTR filename);
 	void SetPosition(int posms);
+	void SetLiveMode();
 	void Start();
 
 	// Draw

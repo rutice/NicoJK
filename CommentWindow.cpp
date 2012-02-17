@@ -2,10 +2,15 @@
 #include "stdafx.h"
 #include "CommentWindow.h"
 #pragma comment(lib, "winmm.lib")
+#pragma comment(lib, "ws2_32.lib")
 
+// コメント取得用イベント
+#define WMS_JKHOST_EVENT (WM_USER + 1)
+#define WMS_GETFLV_EVENT (WM_USER + 2)
+#define WMS_COMMENT_EVENT (WM_USER + 3)
+
+#ifdef _DEBUG
 #include <stdarg.h>
-//#ifdef _DEBUG
-#if 1
 inline void dprintf_real( const _TCHAR * fmt, ... )
 {
   _TCHAR buf[1024];
@@ -19,13 +24,6 @@ inline void dprintf_real( const _TCHAR * fmt, ... )
 #else
 #  define dprintf __noop
 #endif
-
-#include <string>
-#include <vector>
-#include <list>
-#include <cstdio>
-#include <algorithm>
-#include <functional>
 
 HFONT CreateFont(int h) {
 	return ::CreateFont(h,    //フォント高さ
@@ -47,19 +45,19 @@ HFONT CreateFont(int h) {
 class Chat {
 public:
 	int vpos; // 表示開始vpos
-	std::wstring second;
+	std::wstring text;
 	float line; // 上から0, 1... だけど小数点もあるよ
 	int width; // 表示幅（ピクセル）
-	Chat(int f, std::wstring s)
-		: vpos(f),
-		  second(s),
+	Chat(int vpos_in, std::wstring text_in)
+		: vpos(vpos_in),
+		  text(text_in),
 		  line(0),
 		  width(200)
 	{ }
 
 	Chat(const Chat &c) :
 		vpos(c.vpos),
-		second(c.second),
+		text(c.text),
 		line(c.line),
 		width(c.width)
 	{ }
@@ -69,12 +67,9 @@ public:
 	}
 };
 
-int linecount_ = 0;
-std::vector<Chat> chat;
 const int VPOS_LEN = 400;
 
 class ChatManager {
-
 	struct filter {
 		int minvpos_;
 		filter(int minvpos) : minvpos_(minvpos) {}
@@ -87,6 +82,7 @@ class ChatManager {
 	int *counts_;
 
 	// GDI
+	RECT oldRect_;
 	HWND hWnd_;
 	HDC hDC_;
 	HFONT hFont_;
@@ -111,7 +107,9 @@ public:
 		counts_(NULL),
 		hDC_(NULL),
 		hWnd_(NULL)
-	{ }
+	{
+		SetRectEmpty(&oldRect_);
+	}
 
 	bool insert(std::wstring str, int vpos) {
 		if (hWnd_) {
@@ -130,6 +128,7 @@ public:
 
 	void UpdateChat(Chat &c) {
 		// あいてる列を探す（j 列）
+		// TODO: 流れる速度に応じて選ぶ
 		int j;
 		for (j=0; j<linecount_; j++) {
 			if (lines_[j] < c.vpos) {
@@ -141,7 +140,7 @@ public:
 		// 空きがなかったので適当にvposの小さいとこにずらして表示
 		if (j == linecount_) {
 			int vpos_min = 0x7fffffff;
-			int line_index = -1;
+			int line_index = 0;
 			for (j=0; j<linecount_; j++) {
 				if (lines_[j] < vpos_min) {
 					vpos_min = lines_[j];
@@ -149,26 +148,28 @@ public:
 				}
 			}
 			j = line_index;
-			c.line = (float)0.5 + j;
+			c.line = static_cast<float>(0.5 + j);
 		}
 
 		SIZE size;
-		GetTextExtentPoint32W(hDC_, c.second.c_str(), c.second.length(), &size);
+		GetTextExtentPoint32W(hDC_, c.text.c_str(), c.text.length(), &size);
 		counts_[j]++;
 		c.width = size.cx;
 		//dprintf(L"vpod: %d, line: %d, width: %d", c.vpos, c.line, c.width);
 		float ratio = (float)size.cx / window_width_;
+		double newvpos;
 		if (ratio < 0.1) {
-			lines_[j] = c.vpos + (float)VPOS_LEN * (ratio + 0.1);
+			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * (ratio + 0.1);
 		} else if (ratio < 0.2) {
-			lines_[j] = c.vpos + (float)VPOS_LEN * (ratio + 0.1);
+			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * (ratio + 0.1);
 		} else if (ratio < 0.4) {
-			lines_[j] = c.vpos + (float)VPOS_LEN * 0.5;
+			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * 0.5;
 		} else if (ratio < 0.6) {
-			lines_[j] = c.vpos + (float)VPOS_LEN * 0.7;
+			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * 0.7;
 		} else {
-			lines_[j] = c.vpos + (float)VPOS_LEN * 0.9;
+			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * 0.9;
 		}
+		lines_[j] = static_cast<int>(newvpos);
 	}
 
 	void Clear() {
@@ -182,19 +183,28 @@ public:
 	}
 
 	void PrepareChats(HWND hWnd) {
+		if (!hWnd) {
+			return;
+		}
+
+		RECT rc;
+		GetClientRect(hWnd, &rc);
+		if (EqualRect(&rc, &oldRect_)) {
+			return;
+		}
+		CopyRect(&oldRect_, &rc);
+		
+		window_width_ = rc.right;
+		int newLineCount = max(1, rc.bottom / 30 - 1);
+		if (linecount_ == newLineCount) {
+			return;
+		}
+
 		ClearObjects();
 		hWnd_ = hWnd;
 		hDC_ = GetDC(hWnd);
 		hFont_ = CreateFont(28);
 		HGDIOBJ hOld = SelectObject(hDC_, hFont_);
-
-		RECT rc;
-		GetWindowRect(hWnd, &rc);
-		window_width_ = rc.right - rc.left;
-		int newLineCount = (rc.bottom - rc.top) / 30 - 1;
-		if (linecount_ == newLineCount) {
-			return;
-		}
 
 		delete [] lines_;
 		delete [] counts_;
@@ -216,80 +226,6 @@ public:
 };
 ChatManager manager;
 
-void PrepareChats(HWND hWnd) {
-	HDC dc = GetDC(hWnd);
-	HFONT hFont = CreateFont(28);
-	HGDIOBJ hOld = SelectObject(dc, hFont);
-
-	RECT rc;
-	GetWindowRect(hWnd, &rc);
-	int window_width = rc.right - rc.left;
-	int newLineCount = (rc.bottom - rc.top) / 30 - 1;
-	if (linecount_ == newLineCount) {
-		//return;
-	}
-	linecount_ = newLineCount;
-	int *lines = new int[newLineCount];
-	int counts[50] = {0};
-	for (int i=0; i<newLineCount; i++) {
-		lines[i] = 0;
-	}
-
-	SIZE size;
-	std::vector<Chat>::iterator i = chat.begin();
-	while(i != chat.end()) {
-		Chat &c = *i;
-		// あいてる列を探す（j 列）
-		int j;
-		for (j=0; j<newLineCount; j++) {
-			if (lines[j] < c.vpos) {
-				break;
-			}
-		}
-		c.line = (float)j;
-
-		// 空きがなかったので適当にvposの小さいとこにずらして表示
-		if (j == newLineCount) {
-			int vpos_min = 0x7fffffff;
-			int line_index = -1;
-			for (j=0; j<newLineCount; j++) {
-				if (lines[j] < vpos_min) {
-					vpos_min = lines[j];
-					line_index = j;
-				}
-			}
-			j = line_index;
-			c.line = (float)0.5 + j;
-		}
-		
-		GetTextExtentPoint32W(dc, c.second.c_str(), c.second.length(), &size);
-		counts[j]++;
-		c.width = size.cx;
-		//dprintf(L"vpod: %d, line: %d, width: %d", c.vpos, c.line, c.width);
-		float ratio = (float)size.cx / window_width;
-		if (ratio < 0.1) {
-			lines[j] = c.vpos + (float)VPOS_LEN * (ratio + 0.1);
-		} else if (ratio < 0.2) {
-			lines[j] = c.vpos + (float)VPOS_LEN * (ratio + 0.1);
-		} else if (ratio < 0.4) {
-			lines[j] = c.vpos + (float)VPOS_LEN * 0.5;
-		} else if (ratio < 0.6) {
-			lines[j] = c.vpos + (float)VPOS_LEN * 0.7;
-		} else {
-			lines[j] = c.vpos + (float)VPOS_LEN * 0.9;
-		}
-		++i;
-	}
-	for (int i=0; i<newLineCount; i++) {
-		dprintf(L"line[%d] = %d", i, counts[i]);
-	}
-
-	delete [] lines;
-	SelectObject(dc, hOld);
-	DeleteObject(hFont);
-	ReleaseDC(hWnd, dc);
-}
-
 Cjk::Cjk(TVTest::CTVTestApp *pApp) :
 	m_pApp(pApp),
 	hWnd_(NULL),
@@ -298,82 +234,73 @@ Cjk::Cjk(TVTest::CTVTestApp *pApp) :
 { }
 
 void Cjk::Create(HWND hParent) {
-	WNDCLASSEX wc;
-	wc.cbSize = sizeof(WNDCLASSEX);
-	wc.style = CS_HREDRAW | CS_VREDRAW;
-	wc.lpfnWndProc = WndProc;    //プロシージャ名
-	wc.cbClsExtra = 0;
-	wc.cbWndExtra = 0;
-	wc.hInstance = NULL;//インスタンス
-	wc.hIcon = NULL;
-	wc.hCursor = (HCURSOR)LoadImage(NULL,
-		MAKEINTRESOURCE(IDC_ARROW),
-		IMAGE_CURSOR,
-		0,
-		0,
-		LR_DEFAULTSIZE | LR_SHARED);
-	wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
-	wc.lpszMenuName = NULL;    //メニュー名
-	wc.lpszClassName = TEXT("ru.jk");
-	wc.hIconSm = (HICON)LoadImage(NULL,
-		MAKEINTRESOURCE(IDI_APPLICATION),
-		IMAGE_ICON,
-		0,
-		0,
-		LR_DEFAULTSIZE | LR_SHARED);
+	static bool bInitialized = false;
+	if (!bInitialized) {
+		WNDCLASSEX wc;
+		wc.cbSize = sizeof(WNDCLASSEX);
+		wc.style = CS_HREDRAW | CS_VREDRAW;
+		wc.lpfnWndProc = WndProc;
+		wc.cbClsExtra = 0;
+		wc.cbWndExtra = 0;
+		wc.hInstance = NULL;
+		wc.hIcon = NULL;
+		wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+		wc.hbrBackground = CreateSolidBrush(COLOR_TRANSPARENT);
+		wc.lpszMenuName = NULL;
+		wc.lpszClassName = TEXT("ru.jk");
+		wc.hIconSm = NULL;
 
-	RegisterClassEx(&wc);
+		RegisterClassEx(&wc);
+		bInitialized = true;
+	}
 
-	hWnd_ = CreateWindowEx(WS_EX_LAYERED,
-			(LPCTSTR)_T("ru.jk"),
-			TEXT("TvtPlayJK"), //タイトルバーにこの名前が表示されます
-			WS_POPUP, //ウィンドウの種類
-			100,    //Ｘ座標
-			100,    //Ｙ座標
-			200,    //幅
-			200,    //高さ
-			hParent, //親ウィンドウのハンドル、親を作るときはNULL
-			NULL, //メニューハンドル、クラスメニューを使うときはNULL
-			NULL, //インスタンスハンドル
-			(LPVOID)this);
+	hWnd_ = CreateWindowEx(
+		WS_EX_LAYERED,
+		(LPCTSTR)_T("ru.jk"),
+		_T("TvtPlayJK"),
+		WS_POPUP,
+		100, 100,
+		200, 200,
+		hParent,
+		NULL,
+		NULL,
+		(LPVOID)this);
 
 	HWND hButton = CreateWindow(
-		_T("BUTTON"),                            // ウィンドウクラス名
-		_T("コメント再生開始"),                                 // キャプション
-		WS_CHILD | BS_PUSHBUTTON,   // スタイル指定
-		10, 10,                                    // 座標
-		200, 30,                                   // サイズ
-		hWnd_,                                    // 親ウィンドウのハンドル
-		(HMENU)(INT_PTR)IDB_START,                      // メニューハンドル（ここをID指定に流用できる）
-		NULL,                                 // インスタンスハンドル
-		NULL                                     // その他の作成データ
-	);
-	//SetWindowPos(hButton, HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE);
-	// ShowWindowはxml読み込み後
+		_T("BUTTON"),
+		_T("コメント再生開始"),
+		WS_CHILD | BS_PUSHBUTTON,
+		10, 10,
+		200, 30,
+		hWnd_,
+		(HMENU)(INT_PTR)IDB_START,
+		NULL,
+		NULL
+		);
 
 	ShowWindow(hWnd_, SW_SHOW);
 	UpdateWindow(hWnd_);
 
-	RECT rcParent;
-	GetWindowRect(hParent, &rcParent);
-	Resize(rcParent.left, rcParent.top, rcParent.right - rcParent.left, rcParent.bottom - rcParent.top);
+	Resize(m_pApp->GetAppWindow());
 }
 
 void Cjk::Destroy() {
 	if (socGetflv_ != INVALID_SOCKET) {
-		closesocket(socGetflv_);
+		shutdown(socGetflv_, SD_BOTH);
+		closesocket(socComment_);
 		socGetflv_ = INVALID_SOCKET;
 	}
 	if (socComment_ != INVALID_SOCKET) {
+		shutdown(socComment_, SD_BOTH);
 		closesocket(socComment_);
 		socComment_ = INVALID_SOCKET;
 	}
 	ClearObjects();
 	DestroyWindow(hWnd_);
+	hWnd_ = NULL;
 }
 
-HWND Cjk::GetFullscreenWindow()
-{
+HWND Cjk::GetFullscreenWindow() {
 	TVTest::HostInfo hostInfo;
 	if (m_pApp->GetFullscreen() && m_pApp->GetHostInfo(&hostInfo)) {
 		wchar_t className[64];
@@ -416,7 +343,7 @@ void Cjk::Resize(int left, int top, int width, int height) {
 		}
 	}
 	SetupObjects();
-	//PrepareChats(hWnd_);
+	manager.PrepareChats(hWnd_);
 }
 
 void Cjk::SetupObjects() {
@@ -428,33 +355,25 @@ void Cjk::SetupObjects() {
 	memDC_ = CreateCompatibleDC(wndDC);
 
 	RECT rc;
-	GetWindowRect(hWnd_, &rc);
-	hBitmap_ = CreateCompatibleBitmap(wndDC, 1920, 1080);
+	GetClientRect(hWnd_, &rc);
+	hBitmap_ = CreateCompatibleBitmap(wndDC, rc.right, rc.bottom);
 	if (!hBitmap_) {
 		dprintf(L"CreateCompatibleBitmap failed");
 	}
 	hPrevBitmap_ = (HBITMAP)SelectObject(memDC_, hBitmap_);
 	
-	dprintf(L"Setup %x, %x, %x", hWnd_, memDC_, hBitmap_);
-	//ReleaseDC(hWnd_, wndDC);
+	ReleaseDC(hWnd_, wndDC);
 }
 
 void Cjk::ClearObjects() {
 	if (memDC_ == NULL) {
 		return ;
 	}
-	dprintf(L"Clear");
 	SelectObject(memDC_, hPrevBitmap_);
 	DeleteObject(hBitmap_);
 	DeleteDC(memDC_);
 	memDC_ = NULL;
 }
-
-
-#pragma comment(lib, "ws2_32.lib")
-#define WMS_JKHOST_EVENT (WM_USER + 1)
-#define WMS_GETFLV_EVENT (WM_USER + 2)
-#define WMS_COMMENT_EVENT (WM_USER + 3)
 
 // tokenは ms= のように = もつける。
 bool GetToken(const char *in, const char *token, char *out, int len) {
@@ -463,7 +382,7 @@ bool GetToken(const char *in, const char *token, char *out, int len) {
 		start += strlen(token);
 		const char *end = strchr(start, '&');
 		if (end) {
-			strncpy(out, start, min(end - start, len - 1));
+			strncpy_s(out, len, start, min(end - start, len - 1));
 			out[min(end - start, len - 1)] = '\0';
 			return true;
 		}
@@ -473,84 +392,32 @@ bool GetToken(const char *in, const char *token, char *out, int len) {
 
 void Cjk::Open(int jkCh) {
 	// ウィンドウを一旦壊す
-	HWND hParent = GetParent(hWnd_);
 	manager.Clear();
 	Destroy();
 	Create(m_pApp->GetAppWindow());
 
-	linecount_ = 0;
 	msPositionBase_ = 0;
 	jkCh_ = jkCh;
 
 	WSAAsyncGetHostByName(hWnd_, WMS_JKHOST_EVENT, "jk.nicovideo.jp", szHostbuf_, MAXGETHOSTSTRUCT);
 
-	this->SetPosition(timeGetTime());
+	this->SetLiveMode();
 	this->Start();
 }
 
-void Cjk::Open(LPCTSTR tsName) {
-	// ウィンドウを一旦壊す
-	HWND hParent = GetParent(hWnd_);
-	Destroy();
-	Create(hParent);
+void Cjk::Start() {
+	msPositionBase_ = msPosition_;
 	ShowWindow(GetDlgItem(hWnd_, IDB_START), SW_HIDE);
-
-	chat.clear();
-	linecount_ = 0;
-	msPositionBase_ = 0;
-
-	TCHAR filename[2048];
-	_tcscpy_s(filename, tsName);
-	TCHAR *pdot = _tcsrchr(filename, TEXT('.'));
-	if (!pdot) {	
-		return;
-	}
-	_tcscpy(pdot, TEXT(".xml"));
-	FILE * fp = _tfopen(filename, TEXT("r"));
-	if (!fp) {
-		return ;
-	}
-	char sz[2048];
-	wchar_t unicode[1024];
-	wchar_t comment[1024];
-	while(fgets(sz, 2048, fp)) {
-		MultiByteToWideChar(CP_UTF8, 0, sz, strlen(sz)+1, unicode, 1024);
-
-		wchar_t *p = wcsstr(unicode, L" vpos=\"");
-		if (p) {
-			long vpos = _wtol(p + 7);
-			wchar_t *ps = wcsstr(unicode, L">");
-			wchar_t *pe = wcsstr(ps, L"<");
-			
-			if (ps && pe) {
-				wcsncpy(comment, ps + 1, pe - ps - 1);
-				comment[pe - ps - 1] = L'\0';
-				chat.push_back(Chat(vpos, std::wstring(comment)));
-				//dprintf(L"%d: %s", vpos, comment);
-			}
-		}
-	}
-	fclose(fp);
-
-	if (chat.size()) {
-		std::sort(chat.begin(), chat.end());
-		PrepareChats(hWnd_);
-		ShowWindow(GetDlgItem(hWnd_, IDB_START), SW_SHOW);
-		dprintf(L"Open: %d", chat.size());
-	}
 }
 
-void Cjk::Start() {
-	//if (chat.size()) {
-		msPositionBase_ = msPosition_;
-		SetLayeredWindowAttributes(hWnd_, RGB(254, 254, 254), 0, LWA_COLORKEY);
-	//}
-	//ShowWindow(GetDlgItem(hWnd_, IDB_START), SW_HIDE);
+void Cjk::SetLiveMode() {
+	msSystime_ = 0;
+	msPosition_ = timeGetTime();
 }
 
 void Cjk::SetPosition(int posms) {
-	msSystime_ = 0;//timeGetTime();
-	msPosition_ = timeGetTime();
+	msSystime_ = timeGetTime();
+	msPosition_ = posms;
 }
 
 void Cjk::DrawComments(HWND hWnd, HDC hDC) {
@@ -560,7 +427,7 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 	if (memDC_) {
 		SetBkMode(memDC_, TRANSPARENT);
 		RECT rc = {0, 0, 1920, 1080};
-		HBRUSH transBrush = CreateSolidBrush(RGB(254, 254, 254));
+		HBRUSH transBrush = CreateSolidBrush(COLOR_TRANSPARENT);
 		FillRect(memDC_, &rc, transBrush);
 		DeleteObject(transBrush);
 
@@ -568,40 +435,27 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 		GetWindowRect(hWnd, &rcWnd);
 		int width = rcWnd.right - rcWnd.left;
 
-		int basevpos = timeGetTime() / 10; //(msPosition_ - msPositionBase_ + (timeGetTime() - msSystime_)) / 10;
-#if 0
-		int n = chat.size();
-		for (int i=0; i<n; i++) {
-			Chat &c = chat.at(i);
-			if (c.vpos > basevpos) {
-				n = i - 1;
-				break;
-			}
-		}
-
-		if (n == chat.size()) {
-			--n;
-		}
-#endif	
+		int basevpos = (msPosition_ - msPositionBase_ + (timeGetTime() - msSystime_)) / 10;
 		SetBkMode(memDC_, TRANSPARENT);
 		HGDIOBJ hPrevFont = SelectObject(memDC_, CreateFont(28));
 		
-		std::list<Chat>::iterator i = manager.chat_.begin();
-		for (i=manager.chat_.begin(); i!=manager.chat_.end(); ++i) {
-			// skip
+		std::list<Chat>::const_iterator i;
+		for (i=manager.chat_.cbegin(); i!=manager.chat_.cend(); ++i) {
+			// skip head
 			if (i->vpos < basevpos - VPOS_LEN) {
 				continue;
 			}
+			// end
 			if (i->vpos > basevpos) {
 				break;
 			}
 			int x = static_cast<int>(width - (float)(i->width + width) * (basevpos - i->vpos) / VPOS_LEN);
-			std::wstring &str = i->second;
 			int y = static_cast<int>(10 + 30 * i->line);
-			TextOutW(memDC_, x+2, y+2, str.c_str(), str.length());
-			SetTextColor(memDC_, RGB(255, 255, 255));
-			TextOutW(memDC_, x, y, str.c_str(), str.length());
+			const std::wstring &text = i->text;
 			SetTextColor(memDC_, RGB(0, 0, 0));
+			TextOutW(memDC_, x+2, y+2, text.c_str(), text.length());
+			SetTextColor(memDC_, RGB(255, 255, 255));
+			TextOutW(memDC_, x, y, text.c_str(), text.length());
 		}
 		DeleteObject(SelectObject(memDC_, hPrevFont));
 
@@ -616,36 +470,36 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 	static Cjk *pThis = NULL;
 
 	switch (msg) {
-		case WM_CREATE:
-			SetLayeredWindowAttributes(hWnd, RGB(255, 255, 255), 0, LWA_COLORKEY);
-			pThis = (Cjk*)((CREATESTRUCT*)lp)->lpCreateParams;
-			SetTimer(hWnd, jkTimerID, 50, NULL);
-			pThis->socGetflv_ = INVALID_SOCKET;
-			pThis->socComment_ = INVALID_SOCKET;
-			manager.PrepareChats(hWnd);
+	case WM_CREATE:
+		SetLayeredWindowAttributes(hWnd, COLOR_TRANSPARENT, 0, LWA_COLORKEY);
+		pThis = (Cjk*)((CREATESTRUCT*)lp)->lpCreateParams;
+		SetTimer(hWnd, jkTimerID, 50, NULL);
+		pThis->socGetflv_ = INVALID_SOCKET;
+		pThis->socComment_ = INVALID_SOCKET;
+		manager.PrepareChats(hWnd);
+		break;
+	case WM_COMMAND:
+		switch(LOWORD(wp)) {
+		case IDB_START:
+			pThis->Start();
 			break;
-		case WM_COMMAND:
-			switch(LOWORD(wp)) {
-			case IDB_START:
-				pThis->Start();
-				break;
-			}
-			break;
-		case WM_PAINT:
-			hdc = BeginPaint(hWnd, &ps);
-			pThis->DrawComments(hWnd, hdc);
-			EndPaint(hWnd, &ps);
-			break;
-		case WM_TIMER:
-			hdc = GetDC(hWnd);
-			pThis->DrawComments(hWnd, hdc);
-			ReleaseDC(hWnd, hdc);
-			break;
-		case WM_CLOSE:
-			PostMessage(GetParent(hWnd), WM_CLOSE, 0, 0);
-			DestroyWindow(hWnd);
-			break;
-		case WMS_JKHOST_EVENT:
+		}
+		break;
+	case WM_PAINT:
+		hdc = BeginPaint(hWnd, &ps);
+		pThis->DrawComments(hWnd, hdc);
+		EndPaint(hWnd, &ps);
+		break;
+	case WM_TIMER:
+		hdc = GetDC(hWnd);
+		pThis->DrawComments(hWnd, hdc);
+		ReleaseDC(hWnd, hdc);
+		break;
+	case WM_CLOSE:
+		PostMessage(GetParent(hWnd), WM_CLOSE, 0, 0);
+		DestroyWindow(hWnd);
+		break;
+	case WMS_JKHOST_EVENT:
 		if (WSAGETASYNCERROR(lp) == 0) {
 			HOSTENT *hostent = (HOSTENT*)pThis->szHostbuf_;
 			OutputDebugString(_T("JKHOST_EVENT"));
@@ -655,15 +509,14 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 			}
 			WSAAsyncSelect(pThis->socGetflv_, hWnd, WMS_GETFLV_EVENT, FD_CONNECT | FD_WRITE | FD_READ | FD_CLOSE);
 			
-			struct  sockaddr_in	 serversockaddr;		/* サーバのアドレス */
-			/* サーバのアドレスの構造体にサーバのIPアドレスとポート番号を設定します */
-			serversockaddr.sin_family = AF_INET;				/* インターネットの場合 */
-			serversockaddr.sin_addr.s_addr = *(UINT*)(hostent->h_addr);				/* サーバのIPアドレス */
-			serversockaddr.sin_port = htons((unsigned short)80);		/* ポート番号 */
-			memset(serversockaddr.sin_zero,(int)0,sizeof(serversockaddr.sin_zero));
-			if(connect(pThis->socGetflv_, (struct sockaddr *)&serversockaddr,sizeof(serversockaddr)) == SOCKET_ERROR){
-				if(WSAGetLastError() != WSAEWOULDBLOCK){
-					MessageBox(hWnd, L"jkの接続に失敗しました。", L"Error", MB_OK | MB_ICONERROR);
+			struct sockaddr_in serversockaddr;
+			serversockaddr.sin_family = AF_INET;
+			serversockaddr.sin_addr.s_addr = *(UINT*)(hostent->h_addr);
+			serversockaddr.sin_port = htons(80);
+			memset(serversockaddr.sin_zero, 0, sizeof(serversockaddr.sin_zero));
+			if (connect(pThis->socGetflv_, (struct sockaddr*)&serversockaddr, sizeof(serversockaddr)) == SOCKET_ERROR) {
+				if (WSAGetLastError() != WSAEWOULDBLOCK) {
+					MessageBox(hWnd, _T("ニコニコサーバへの接続に失敗しました。"), _T("Error"), MB_OK | MB_ICONERROR);
 				}
 			}
 		}
@@ -672,24 +525,18 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		{
 			SOCKET soc = (SOCKET)wp;
 			char *szGetTemplate = "GET /api/getflv?v=jk%d HTTP/1.0\r\nHost: jk.nicovideo.jp\r\n\r\n";
-			char szGet[1024];
-			wsprintfA(szGet, szGetTemplate, pThis->jkCh_);
-			static bool sent = false;
-			switch(WSAGETSELECTEVENT(lp))
-			{
+			switch(WSAGETSELECTEVENT(lp)) {
 			case FD_CONNECT:		/* サーバ接続したイベントの場合 */
 				OutputDebugString(_T("getflv Connected"));
 				break;
 			case FD_WRITE:
-				if (sent == false) {
-					OutputDebugString(_T("getflv Write"));
-					send(soc, szGet, strlen(szGet)+1, 0);
-					sent = false;
-				}
+				OutputDebugString(_T("getflv Write"));
+				char szGet[1024];
+				wsprintfA(szGet, szGetTemplate, pThis->jkCh_);
+				send(soc, szGet, strlen(szGet)+1, 0);
 				break;
 			case FD_READ:
 				char buf[10240];
-				memset(buf, '\0', 10240);
 				int read;
 				read = recv(soc, buf, sizeof(buf)-1, 0);
 				buf[read] = '\0';
@@ -708,21 +555,22 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 						serversockaddr.sin_family = AF_INET;
 						serversockaddr.sin_addr.s_addr = inet_addr(szMs);
 						serversockaddr.sin_port = htons((unsigned short)atoi(szMsPort));
-						memset(serversockaddr.sin_zero,(int)0,sizeof(serversockaddr.sin_zero));
+						memset(serversockaddr.sin_zero, 0, sizeof(serversockaddr.sin_zero));
 
 						// コメントサーバに接続
-						if(connect(pThis->socComment_,(struct sockaddr *)&serversockaddr,sizeof(serversockaddr)) == SOCKET_ERROR){
-							if(WSAGetLastError() != WSAEWOULDBLOCK){
-								MessageBox(hWnd,L"サーバへの接続に失敗しました。",L"Error",MB_OK | MB_ICONERROR);
+						if (connect(pThis->socComment_, (struct sockaddr*)&serversockaddr, sizeof(serversockaddr)) == SOCKET_ERROR) {
+							if (WSAGetLastError() != WSAEWOULDBLOCK) {
+								MessageBox(hWnd, _T("コメントサーバへの接続に失敗しました。"), _T("Error"), MB_OK | MB_ICONERROR);
 							}
 						}
 					}
 				}
 				OutputDebugStringA(buf);
-				closesocket(soc);
+				shutdown(pThis->socGetflv_, SD_BOTH);
 				break;
 			case FD_CLOSE:
 				OutputDebugString(_T("getflv Closed"));
+				closesocket(soc);
 				pThis->socGetflv_ = INVALID_SOCKET;
 				break;
 			}
@@ -731,25 +579,20 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 	case WMS_COMMENT_EVENT:
 		{
 			SOCKET soc = (SOCKET)wp;
-			char szRequest[1024];
-			wsprintfA(szRequest, "<thread res_from=\"-10\" version=\"20061206\" thread=\"%s\" />", pThis->szThread_);
-			static bool sent = false;
-			switch(WSAGETSELECTEVENT(lp))
-			{
+			const char *szRequestTemplate = "<thread res_from=\"-10\" version=\"20061206\" thread=\"%s\" />";
+			switch(WSAGETSELECTEVENT(lp)) {
 			case FD_CONNECT:		/* サーバ接続したイベントの場合 */
-				OutputDebugString(_T("Connected"));
+				OutputDebugString(_T("Comment Connected"));
 				manager.PrepareChats(hWnd);
 				break;
 			case FD_WRITE:
-				if (sent == false) {
-					OutputDebugString(_T("Write"));
-					send(soc, szRequest, strlen(szRequest)+1, 0);
-					sent = false;
-				}
+				OutputDebugString(_T("Comment Write"));
+				char szRequest[1024];
+				wsprintfA(szRequest, szRequestTemplate, pThis->szThread_);
+				send(soc, szRequest, strlen(szRequest) + 1, 0); // '\0'まで送る
 				break;
 			case FD_READ:
 				char buf[10240];
-				memset(buf, '\0', 10240);
 				int read;
 				read = recv(soc, buf, sizeof(buf)-1, 0);
 				wchar_t wcsBuf[10240];
@@ -766,19 +609,19 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 						if (es && ee) {
 							++es;
 							*ee = L'\0';
-							OutputDebugString(es);
+							dprintf(es);
 							manager.insert(es, timeGetTime() / 10);
-							chat.push_back(Chat(timeGetTime()/10, es));
 						}
 					}
 					pos += len + 1;
 				} while(pos < wcsLen);
+				// 古いのは消す
 				manager.trim(timeGetTime() / 10 - VPOS_LEN * 3);
-				manager.PrepareChats(hWnd);
 				break;
 			case FD_CLOSE:
+				OutputDebugString(_T("Comment Closed"));
+				closesocket(pThis->socComment_);
 				pThis->socComment_ = INVALID_SOCKET;
-				OutputDebugString(_T("Closed"));
 				break;
 			}
 		}
@@ -790,6 +633,10 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 BOOL Cjk::WindowMsgCallback(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam,LRESULT *pResult) {
+	if (!hWnd_) {
+		return FALSE;
+	}
+
     switch (uMsg) {
 	case WM_ACTIVATE:
 		if (WA_INACTIVE == LOWORD(wParam)) {
@@ -804,6 +651,10 @@ BOOL Cjk::WindowMsgCallback(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam,LRES
 }
 
 LRESULT Cjk::EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2) {
+	if (!hWnd_) {
+		return FALSE;
+	}
+
 	switch (Event) {
     case TVTest::EVENT_PLUGINENABLE:
         // プラグインの有効状態が変化した

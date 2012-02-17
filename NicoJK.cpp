@@ -9,10 +9,9 @@
 #include "NicoJK.h"
 #include "resource.h"
 #include "CommentWindow.h"
-#include <WindowsX.h>
 
-#include <stdarg.h>
 #ifdef _DEBUG
+#include <stdarg.h>
 inline void dprintf_real( const _TCHAR * fmt, ... )
 {
   _TCHAR buf[1024];
@@ -58,7 +57,7 @@ bool CNicoJK::Initialize() {
 	}
 
 	// 独自実装？
-	useSDK_ = (bool)GetPrivateProfileInt(_T("Setting"), _T("useSDK"), 1, szIniFileName_);
+	useSDK_ = 0 != GetPrivateProfileInt(_T("Setting"), _T("useSDK"), 1, szIniFileName_);
 	jkcw_ = new Cjk(m_pApp);
 
 	CoInitialize(NULL);
@@ -160,7 +159,7 @@ void CNicoJK::StartJK(int jkID) {
 		target = GetFullscreenWindow();
 	}
 	if (!target) {
-		target = GetNormalHWND();
+		target = m_pApp->GetAppWindow();
 	}
 	
 	cw_->put_Transparent(VARIANT_TRUE);
@@ -233,10 +232,6 @@ HWND CNicoJK::GetFullscreenWindow() {
 	return NULL;
 }
 
-HWND CNicoJK::GetNormalHWND() {
-	return m_pApp->GetAppWindow();
-}
-
 void CNicoJK::OnChannelChange() {
 	TVTest::ChannelInfo info;
 	m_pApp->GetCurrentChannelInfo(&info);
@@ -265,7 +260,7 @@ void CNicoJK::OnFullScreenChange() {
 				cw_->AttachWindowByHandle(HandleToLong(hFull), &hr);
 				return ;
 			}
-			cw_->AttachWindowByHandle(HandleToLong(GetNormalHWND()), &hr);
+			cw_->AttachWindowByHandle(HandleToLong(m_pApp->GetAppWindow()), &hr);
 		}
 	}
 }

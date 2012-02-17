@@ -1,10 +1,7 @@
 ﻿// NicoJK.h
 #pragma once
 
-#include <windows.h>
-#include <Objbase.h>
-#include <Shlwapi.h>
-#include <tchar.h>
+#include "stdafx.h"
 
 #define TVTEST_PLUGIN_CLASS_IMPLEMENT
 #include "TVTestPlugin.h"
@@ -63,7 +60,6 @@ class CNicoJK : public TVTest::CTVTestPlugin
 	void AdjustCommentWindow();
 
 	HWND GetFullscreenWindow();
-	HWND GetNormalHWND();
 public:
 	virtual bool GetPluginInfo(TVTest::PluginInfo *pInfo);
 	virtual bool Initialize();
