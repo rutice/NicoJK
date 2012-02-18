@@ -42,30 +42,96 @@ HFONT CreateFont(int h) {
         TEXT("MS UI Gothic"));    //書体名
 }
 
+enum CHAT_POSITION {
+	CHAT_POS_DEFAULT = 0,
+	CHAT_POS_SHITA = 1,
+	CHAT_POS_UE = 2
+};
+
 class Chat {
 public:
 	int vpos; // 表示開始vpos
 	std::wstring text;
 	float line; // 上から0, 1... だけど小数点もあるよ
 	int width; // 表示幅（ピクセル）
+	COLORREF color;
+	CHAT_POSITION position;
 	Chat(int vpos_in, std::wstring text_in)
 		: vpos(vpos_in),
 		  text(text_in),
 		  line(0),
-		  width(200)
-	{ }
-
-	Chat(const Chat &c) :
-		vpos(c.vpos),
-		text(c.text),
-		line(c.line),
-		width(c.width)
+		  width(200),
+		  color(RGB(255, 255, 255)),
+		  position(CHAT_POS_DEFAULT)
 	{ }
 
 	bool operator<(const Chat& b) {
 		return vpos < b.vpos;
 	}
 };
+
+struct COMMAND2COLOR {
+	COLORREF color;
+	wchar_t *command;
+};
+
+struct COMMAND2COLOR command2color[] = {
+	{RGB(0xFF, 0x00, 0x00), L"red"},
+	{RGB(0xFF, 0x80, 0x80), L"pink"},
+	{RGB(0xFF, 0xC0, 0x00), L"orange"},
+	{RGB(0xFF, 0xFF, 0x00), L"yellow"},
+	{RGB(0x00, 0xFF, 0x00), L"green"},
+	{RGB(0x00, 0xFF, 0xFF), L"cyan"},
+	{RGB(0x00, 0x00, 0xFF), L"blue"},
+	{RGB(0xC0, 0x00, 0xFF), L"purple"},
+	{RGB(0x00, 0x00, 0x00), L"black"},
+	{RGB(0xCC, 0xCC, 0x99), L"white2"},
+	{RGB(0xCC, 0xCC, 0x99), L"niconicowhite"},
+	{RGB(0xCC, 0x00, 0x33), L"red2"},
+	{RGB(0xCC, 0x00, 0x33), L"truered"},
+	{RGB(0xFF, 0x33, 0xCC), L"pink2"},
+	{RGB(0xFF, 0x66, 0x00), L"orange2"},
+	{RGB(0xFF, 0x66, 0x00), L"passionorange"},
+	{RGB(0x99, 0x99, 0x00), L"yellow2"},
+	{RGB(0x99, 0x99, 0x00), L"madyellow"},
+	{RGB(0x00, 0xCC, 0x66), L"green2"},
+	{RGB(0x00, 0xCC, 0x66), L"elementalgreen"},
+	{RGB(0x00, 0xCC, 0xCC), L"cyan2"},
+	{RGB(0x33, 0x99, 0xFF), L"blue2"},
+	{RGB(0x33, 0x99, 0xFF), L"marineblue"},
+	{RGB(0x66, 0x33, 0xCC), L"purple2"},
+	{RGB(0x66, 0x33, 0xCC), L"nobleviolet"},
+	{RGB(0x66, 0x66, 0x66), L"black2"}
+};
+
+#define COMMAND2COLOR_SIZE (sizeof(command2color)/sizeof(COMMAND2COLOR))
+#define NO_COLOR	0xFFFFFFFF
+COLORREF GetColor(const wchar_t *command) {
+	if (command[0] == L'#') {
+		if (wcslen(command) != 7) {
+			return NO_COLOR;
+		}
+		int color = 0;
+		for (int i=1; i<7; i++) {
+			color *= 16;
+			wchar_t c = towupper(command[i]);
+			if (L'0' <= c && c <= L'9') {
+				color += c - L'0';
+			} else if (L'A' <= c && c <= L'F') {
+				color += c - L'A' + 10;
+			} else {
+				return NO_COLOR;
+			}
+		}
+		return RGB((color & 0xFF0000) >> 16, (color & 0x00FF00) >> 8, color & 0xFF);
+	}
+	for (int i=0; i<COMMAND2COLOR_SIZE; ++i) {
+		if (wcscmp(command2color[i].command, command) == 0) {
+			return command2color[i].color;
+		}
+	}
+	return NO_COLOR;
+}
 
 const int VPOS_LEN = 400;
 
@@ -79,6 +145,8 @@ class ChatManager {
 	int linecount_;
 	int window_width_;
 	int *lines_;
+	int *linesShita_;
+	int *linesUe_;
 	int *counts_;
 
 	// GDI
@@ -98,12 +166,41 @@ class ChatManager {
 		hWnd_ = NULL;
 	}
 
+	bool xmlGetText(const wchar_t *str, wchar_t *out, int len) {
+		const wchar_t *es = wcschr(str, L'>');
+		const wchar_t *ee = wcschr(str + 1, L'<');
+		if (es && ee) {
+			++es;
+			wcsncpy_s(out, len, es, ee - es);
+			out[min(len - 1, ee - es)] = L'\0';
+			return true;
+		}
+		return false;
+	}
+
+	// tokenはスペースで始まり=までつける 例：" mail=" or ATTR("mail")
+#define ATTR(name) (L" " ##name L"=\"")
+	bool xmlGetAttr(const wchar_t *in, const wchar_t *token, wchar_t *out, int len) {
+		const wchar_t *start = wcsstr(in, token);
+		if (start) {
+			start += wcslen(token);
+			const wchar_t *end = wcschr(start, L'"');
+			if (end) {
+				wcsncpy_s(out, len, start, min(end - start, len - 1));
+				out[min(end - start, len - 1)] = '\0';
+				return true;
+			}
+		}
+		return false;
+	}
 public:
 	std::list<Chat> chat_;
 
 	ChatManager() :
 		linecount_(0),
 		lines_(NULL),
+		linesShita_(NULL),
+		linesUe_(NULL),
 		counts_(NULL),
 		hDC_(NULL),
 		hWnd_(NULL)
@@ -111,14 +208,41 @@ public:
 		SetRectEmpty(&oldRect_);
 	}
 
-	bool insert(std::wstring str, int vpos) {
-		if (hWnd_) {
-			Chat c(vpos, str);
-			UpdateChat(c);
-			chat_.push_back(Chat(c));
-			return true;
+	bool insert(wchar_t *str, int vpos) {
+		wchar_t szText[1024];
+		wchar_t szCommand[1024] = L"";
+		if (wcsncmp(str, L"<chat ", 6) == 0) {
+			if (!xmlGetText(str, szText, 1024)) {
+				return false;
+			}
+			
+			Chat c(vpos, szText);
+			if (xmlGetAttr(str, ATTR(L"mail"), szCommand, 1024)) {
+				wchar_t *pt = wcstok(szCommand, L" ");
+				while (pt != NULL) {
+					if (wcscmp(pt, L"184") == 0) {
+						; // skip
+					} else if (wcscmp(pt, L"shita") == 0) {
+						c.position = CHAT_POS_SHITA;
+					} else if (wcscmp(pt, L"ue") == 0) {
+						c.position = CHAT_POS_UE;
+					} else {
+						COLORREF color = GetColor(pt);
+						if (color != NO_COLOR) {
+							c.color = color;
+						}
+					}
+					pt = wcstok(NULL, L" ");
+				}
+			}
+
+			if (hWnd_) {
+				UpdateChat(c);
+			}
+
+			chat_.push_back(c);
 		}
-		return false;
+		return true;
 	}
 
 	bool trim(int minvpos) {
@@ -129,9 +253,16 @@ public:
 	void UpdateChat(Chat &c) {
 		// あいてる列を探す（j 列）
 		// TODO: 流れる速度に応じて選ぶ
+		int *target = lines_;
+		if (c.position == CHAT_POS_SHITA) {
+			target = linesShita_;
+		} else if (c.position == CHAT_POS_UE) {
+			// TODO: 上も対応・・・しないかも
+		}
+
 		int j;
 		for (j=0; j<linecount_; j++) {
-			if (lines_[j] < c.vpos) {
+			if (target[j] < c.vpos) {
 				break;
 			}
 		}
@@ -142,13 +273,18 @@ public:
 			int vpos_min = 0x7fffffff;
 			int line_index = 0;
 			for (j=0; j<linecount_; j++) {
-				if (lines_[j] < vpos_min) {
+				if (target[j] < vpos_min) {
 					vpos_min = lines_[j];
 					line_index = j;
 				}
 			}
 			j = line_index;
 			c.line = static_cast<float>(0.5 + j);
+		}
+
+		if (c.position == CHAT_POS_SHITA) {
+			linesShita_[j] = c.vpos + VPOS_LEN;
+			return;
 		}
 
 		SIZE size;
@@ -177,8 +313,12 @@ public:
 		linecount_ = -1;
 		delete [] lines_;
 		delete [] counts_;
+		delete [] linesShita_;
+		delete [] linesUe_;
 		lines_ = NULL;
 		counts_ = NULL;
+		linesShita_ = NULL;
+		linesUe_ = NULL;
 		ClearObjects();
 	}
 
@@ -208,12 +348,18 @@ public:
 
 		delete [] lines_;
 		delete [] counts_;
+		delete [] linesShita_;
+		delete [] linesUe_;
 
 		linecount_ = newLineCount;
 		lines_ = new int[newLineCount];
 		counts_ = new int[newLineCount];
+		linesShita_ = new int[newLineCount];
+		linesUe_ = new int[newLineCount];
 		memset(lines_, 0, sizeof(int) * newLineCount);
 		memset(counts_, 0, sizeof(int) * newLineCount);
+		memset(linesShita_, 0, sizeof(int) * newLineCount);
+		memset(linesUe_, 0, sizeof(int) * newLineCount);
 
 		std::list<Chat>::iterator i;
 		for (i=chat_.begin(); i!=chat_.end(); ++i) {
@@ -432,8 +578,8 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 		DeleteObject(transBrush);
 
 		RECT rcWnd;
-		GetWindowRect(hWnd, &rcWnd);
-		int width = rcWnd.right - rcWnd.left;
+		GetClientRect(hWnd, &rcWnd);
+		int width = rcWnd.right;
 
 		int basevpos = (msPosition_ - msPositionBase_ + (timeGetTime() - msSystime_)) / 10;
 		SetBkMode(memDC_, TRANSPARENT);
@@ -449,13 +595,27 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 			if (i->vpos > basevpos) {
 				break;
 			}
-			int x = static_cast<int>(width - (float)(i->width + width) * (basevpos - i->vpos) / VPOS_LEN);
-			int y = static_cast<int>(10 + 30 * i->line);
-			const std::wstring &text = i->text;
-			SetTextColor(memDC_, RGB(0, 0, 0));
-			TextOutW(memDC_, x+2, y+2, text.c_str(), text.length());
-			SetTextColor(memDC_, RGB(255, 255, 255));
-			TextOutW(memDC_, x, y, text.c_str(), text.length());
+			if (i->position == CHAT_POS_SHITA) {
+				RECT rc;
+				rc.top = rcWnd.bottom - 30 - i->line * 30;
+				rc.bottom = rc.top + 30;
+				rc.left = 0;
+				rc.right = rcWnd.right;
+				const std::wstring &text = i->text;
+				SetTextColor(memDC_, RGB(0, 0, 0));
+				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER);
+				OffsetRect(&rc, -2, -2);
+				SetTextColor(memDC_, i->color);
+				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER);				
+			} else {
+				int x = static_cast<int>(width - (float)(i->width + width) * (basevpos - i->vpos) / VPOS_LEN);
+				int y = static_cast<int>(10 + 30 * i->line);
+				const std::wstring &text = i->text;
+				SetTextColor(memDC_, RGB(0, 0, 0));
+				TextOutW(memDC_, x+2, y+2, text.c_str(), text.length());
+				SetTextColor(memDC_, i->color);
+				TextOutW(memDC_, x, y, text.c_str(), text.length());
+			}
 		}
 		DeleteObject(SelectObject(memDC_, hPrevFont));
 
@@ -603,16 +763,7 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 				do {
 					wchar_t *line = &wcsBuf[pos];
 					int len = wcslen(line);
-					if (wcsncmp(line, L"<chat ", 6) == 0) {
-						wchar_t *es = wcschr(line, L'>');
-						wchar_t *ee = wcschr(line + 1, L'<');
-						if (es && ee) {
-							++es;
-							*ee = L'\0';
-							dprintf(es);
-							manager.insert(es, timeGetTime() / 10);
-						}
-					}
+					manager.insert(line, timeGetTime() / 10);
 					pos += len + 1;
 				} while(pos < wcsLen);
 				// 古いのは消す
