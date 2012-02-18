@@ -63,6 +63,8 @@ bool CNicoJK::Initialize() {
 	CoInitialize(NULL);
 	WSADATA wsaData;
 	WSAStartup(MAKEWORD(1, 1), &wsaData);
+	hGethost_ = NULL;
+	socJkapi_ = INVALID_SOCKET;
 
 	// 勢い窓作成
 	hForce_ = CreateDialogParam(g_hinstDLL, MAKEINTRESOURCE(IDD_FORCE),
@@ -232,15 +234,21 @@ HWND CNicoJK::GetFullscreenWindow() {
 	return NULL;
 }
 
+int CNicoJK::GetJKByChannelName(const wchar_t *name) {
+	int jkID = GetPrivateProfileInt(_T("Channels"), name, -1, szIniFileName_);
+	if (jkID == -1) {
+		jkID = GetPrivateProfileInt(_T("Setting"), name, -1, szIniFileName_);
+	}
+	return jkID;
+}
+
 void CNicoJK::OnChannelChange() {
 	TVTest::ChannelInfo info;
 	m_pApp->GetCurrentChannelInfo(&info);
 	OutputDebugStringW(info.szChannelName);
 
-	int jkID = GetPrivateProfileInt(_T("Channels"), info.szChannelName, -1, szIniFileName_);
-	if (jkID == -1) {
-		jkID = GetPrivateProfileInt(_T("Setting"), info.szChannelName, -1, szIniFileName_);
-	}
+	int jkID = GetJKByChannelName(info.szChannelName);
+	ForceDialog_UpdateForce();
 
 	if (jkID != -1) {
 		StartJK(jkID);
@@ -341,8 +349,19 @@ BOOL CALLBACK CNicoJK::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LP
 }
 
 // 勢い窓関連
-BOOL CNicoJK::ForceDialog_UpdateForce(HWND hWnd) {
-	HWND hList = GetDlgItem(hWnd, IDC_FORCELIST);
+BOOL CNicoJK::ForceDialog_UpdateForce() {
+	if (!useSDK_) {
+		if (socJkapi_ != INVALID_SOCKET) {
+			shutdown(socJkapi_, 1);
+			closesocket(socJkapi_);
+		}
+		if (!hGethost_) {
+			hGethost_ = WSAAsyncGetHostByName(hForce_, WMS_APIJK_HOST, "api.jk.nicovideo.jp", szHostbuf_, MAXGETHOSTSTRUCT);
+		}
+		return TRUE;
+	}
+
+	HWND hList = GetDlgItem(hForce_, IDC_FORCELIST);
 	ListBox_ResetContent(hList);
 
 	IChannelCollectionPtr cc;
@@ -375,6 +394,50 @@ BOOL CNicoJK::ForceDialog_UpdateForce(HWND hWnd) {
 	return TRUE;
 }
 
+const wchar_t *CNicoJK::GetXmlInnerElement(const wchar_t *in, const wchar_t *start_tag, const wchar_t *end_tag, wchar_t *buf, int len) {
+	const wchar_t *ps = wcsstr(in, start_tag);
+	if (ps) {
+		const wchar_t *pe = wcsstr(ps + 1, end_tag);
+		if (pe) {
+			memset(buf, 0, len * sizeof(wchar_t));
+			wcsncpy_s(buf, len, ps + wcslen(start_tag), pe - ps - wcslen(start_tag));
+			return pe + wcslen(end_tag);
+		}
+	}
+	return NULL;
+}
+
+BOOL CNicoJK::ForceDialog_UpdateForceXML() {
+	wchar_t wcs[102400];
+	wchar_t channelElem[1024];
+	MultiByteToWideChar(CP_UTF8, 0, szChannelBuf_, -1, wcs, 10240);
+	const wchar_t *p = wcs;
+
+	TVTest::ChannelInfo info;
+	m_pApp->GetCurrentChannelInfo(&info);
+	int currentJK = GetJKByChannelName(info.szChannelName);
+
+	HWND hList = GetDlgItem(hForce_, IDC_FORCELIST);
+	ListBox_ResetContent(hList);
+	while(p = GetXmlInnerElement(p, L"<channel>", L"</channel>", channelElem, 1024)) {
+		wchar_t szJK[100];
+		GetXmlInnerElement(channelElem, L"<video>", L"</video>", szJK, 100);
+		wchar_t szName[100];
+		GetXmlInnerElement(channelElem, L"<name>", L"</name>", szName, 100);
+		wchar_t szForce[100];
+		GetXmlInnerElement(channelElem, L"<force>", L"</force>", szForce, 100);
+
+		wchar_t szResult[1024];
+		wsprintfW(szResult, L"%s (%s) 勢い：%s\n", szJK, szName, szForce);
+		ListBox_AddString(hList, szResult);
+
+		if (currentJK == _wtoi(szJK + 2)) {
+			ListBox_SetCurSel(hList, ListBox_GetCount(hList) - 1);
+		}
+	}
+	return TRUE;
+}
+
 BOOL CNicoJK::ForceDialog_OnSelChange(HWND hList) {
 	int selected = ListBox_GetCurSel(hList);
 	if (selected != LB_ERR) {
@@ -389,13 +452,9 @@ BOOL CNicoJK::ForceDialog_OnSelChange(HWND hList) {
 				// なんとなく200まで
 				for (int i=0; i<200; i++) {
 					if (m_pApp->GetChannelInfo(m_pApp->GetTuningSpace(), i, &info)) {
-						int chJK = GetPrivateProfileIntW(_T("Channels"), info.szChannelName, -1, szIniFileName_);
-						if (chJK == -1) {
-							chJK = GetPrivateProfileIntW(_T("Setting"), info.szChannelName, -1, szIniFileName_);
-						}
+						int chJK = GetJKByChannelName(info.szChannelName);
 						// 実況IDが一致するチャンネルに切替
 						if (jkID == chJK) {
-							m_pApp->GetCurrentChannelInfo(&info);
 							m_pApp->SetChannel(m_pApp->GetTuningSpace(), i);
 							return TRUE;
 						}
@@ -441,10 +500,62 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 			EndDialog(hwnd, IDOK);
 		}
 		break;
+	
+	// jkAPIサーバのホストが得られたら、jkAPIサーバに接続
+	case WMS_APIJK_HOST:
+		pThis->hGethost_ = NULL;
+		if (WSAGETASYNCERROR(lparam) == 0) {
+			HOSTENT *hostent = (HOSTENT*)pThis->szHostbuf_;
+			OutputDebugString(_T("JKHOST_EVENT"));
+			pThis->socJkapi_ = socket(PF_INET, SOCK_STREAM, 0);
+			if (pThis->socJkapi_ == INVALID_SOCKET) {
+				//error
+			}
+			WSAAsyncSelect(pThis->socJkapi_, hwnd, WMS_APIJK, FD_CONNECT | FD_WRITE | FD_READ | FD_CLOSE);
+			
+			pThis->serversockaddr_.sin_family = AF_INET;
+			pThis->serversockaddr_.sin_addr.s_addr = *(UINT*)(hostent->h_addr);
+			pThis->serversockaddr_.sin_port = htons(80);
+			memset(pThis->serversockaddr_.sin_zero, 0, sizeof(pThis->serversockaddr_.sin_zero));
+			if (connect(pThis->socJkapi_, (struct sockaddr*)&pThis->serversockaddr_, sizeof(pThis->serversockaddr_)) == SOCKET_ERROR) {
+				if (WSAGetLastError() != WSAEWOULDBLOCK) {
+					MessageBox(hwnd, _T("ニコニコ実況APIサーバへの接続に失敗しました。"), _T("Error"), MB_OK | MB_ICONERROR);
+				}
+			}
+		}
+		return TRUE;
+
+	// jkAPIサーバとの通信
+	case WMS_APIJK:
+		{
+			SOCKET soc = (SOCKET)wparam;
+			char *szGetTemplate = "GET /v1/channel.list HTTP/1.0\r\nHost: api.jk.nicovideo.jp\r\nConnection: Close\r\n\r\n";
+			switch(WSAGETSELECTEVENT(lparam)) {
+			case FD_CONNECT:		/* サーバ接続したイベントの場合 */
+				break;
+			case FD_WRITE:
+				pThis->szChannelBuf_[0] = '\0';
+				send(soc, szGetTemplate, strlen(szGetTemplate)+1, 0);
+				break;
+			case FD_READ:
+				char buf[10240];
+				int read;
+				read = recv(soc, buf, sizeof(buf)-1, 0);
+				buf[read] = '\0';
+				strcat_s(pThis->szChannelBuf_, buf);
+				break;
+			case FD_CLOSE:
+				pThis->ForceDialog_UpdateForceXML();
+				closesocket(soc);
+				pThis->socJkapi_ = INVALID_SOCKET;
+				break;
+			}
+		}
+		return TRUE;
 	case WM_TIMER:
 		if (pThis) {
 			// 勢いを更新する
-			return pThis->ForceDialog_UpdateForce(hwnd);
+			return pThis->ForceDialog_UpdateForce();
 		}
 		break;
 	case WM_COMMAND:

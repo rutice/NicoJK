@@ -16,6 +16,10 @@
 // 定数
 const UINT_PTR TIMER_UPDATE = 1;
 
+// 通信用
+#define WMS_APIJK_HOST (WM_APP + 101)
+#define WMS_APIJK (WM_APP + 102)
+
 // プラグインクラス
 class CNicoJK : public TVTest::CTVTestPlugin
 {
@@ -42,12 +46,23 @@ class CNicoJK : public TVTest::CTVTestPlugin
 	bool useSDK_;
 	Cjk *jkcw_;
 
+	// 通信用
+	char szHostbuf_[MAXGETHOSTSTRUCT];
+	char szChannelBuf_[102400];
+	struct sockaddr_in serversockaddr_;
+	HANDLE hGethost_;
+	SOCKET socJkapi_;
+
+	int GetJKByChannelName(const wchar_t *name);
+
 	static VOID CALLBACK OnServiceChangeTimer(HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime);
 	static LRESULT CALLBACK EventCallback(UINT Event,LPARAM lParam1,LPARAM lParam2,void *pClientData);
 	static BOOL CALLBACK WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT *pResult, void *pUserData);
 
 	static INT_PTR CALLBACK ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPARAM lparam);
-	BOOL ForceDialog_UpdateForce(HWND hWnd);
+	BOOL ForceDialog_UpdateForce();
+	const wchar_t *GetXmlInnerElement(const wchar_t *in, const wchar_t *start_tag, const wchar_t *end_tag, wchar_t *buf, int len);
+	BOOL ForceDialog_UpdateForceXML();
 	BOOL ForceDialog_OnSelChange(HWND hList);
 
 	void TogglePlugin(bool bEnabled);
