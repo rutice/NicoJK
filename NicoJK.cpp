@@ -506,10 +506,9 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 		pThis->hGethost_ = NULL;
 		if (WSAGETASYNCERROR(lparam) == 0) {
 			HOSTENT *hostent = (HOSTENT*)pThis->szHostbuf_;
-			OutputDebugString(_T("JKHOST_EVENT"));
 			pThis->socJkapi_ = socket(PF_INET, SOCK_STREAM, 0);
 			if (pThis->socJkapi_ == INVALID_SOCKET) {
-				//error
+				return FALSE;
 			}
 			WSAAsyncSelect(pThis->socJkapi_, hwnd, WMS_APIJK, FD_CONNECT | FD_WRITE | FD_READ | FD_CLOSE);
 			
@@ -545,7 +544,9 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 				strcat_s(pThis->szChannelBuf_, buf);
 				break;
 			case FD_CLOSE:
-				pThis->ForceDialog_UpdateForceXML();
+				if (strlen(buf)) {
+					pThis->ForceDialog_UpdateForceXML();
+				}
 				closesocket(soc);
 				pThis->socJkapi_ = INVALID_SOCKET;
 				break;
