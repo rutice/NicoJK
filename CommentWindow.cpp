@@ -173,6 +173,25 @@ class ChatManager {
 			++es;
 			wcsncpy_s(out, len, es, ee - es);
 			out[min(len - 1, ee - es)] = L'\0';
+
+			// entity reference
+			wchar_t *p = wcschr(out, L'&');
+			while(p) {
+				if (wcsncmp(p, L"&lt;", 4) == 0) {
+					*p = L'<';
+					wcscpy_s(p+1, len - (p - out) - 1, p + 4);
+				} else if (wcsncmp(p, L"&gt;", 4) == 0) {
+					*p = L'>';
+					wcscpy_s(p+1, len - (p - out) - 1, p + 4);
+				} else if (wcsncmp(p, L"&amp;", 5) == 0) {
+					*p = L'&';
+					wcscpy_s(p+1, len - (p - out) - 1, p + 5);
+				} else if (wcsncmp(p, L"&apos;", 6) == 0) {
+					*p = L'"';
+					wcscpy_s(p+1, len - (p - out) - 1, p + 6);
+				}
+				p = wcschr(p + 1, L'&');
+			}
 			return true;
 		}
 		return false;
@@ -603,10 +622,10 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 				rc.right = rcWnd.right;
 				const std::wstring &text = i->text;
 				SetTextColor(memDC_, RGB(0, 0, 0));
-				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER);
+				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER | DT_NOPREFIX);
 				OffsetRect(&rc, -2, -2);
 				SetTextColor(memDC_, i->color);
-				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER);				
+				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER | DT_NOPREFIX);				
 			} else {
 				int x = static_cast<int>(width - (float)(i->width + width) * (basevpos - i->vpos) / VPOS_LEN);
 				int y = static_cast<int>(10 + 30 * i->line);
