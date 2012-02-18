@@ -57,7 +57,7 @@ bool CNicoJK::Initialize() {
 	}
 
 	// 独自実装？
-	useSDK_ = 0 != GetPrivateProfileInt(_T("Setting"), _T("useSDK"), 1, szIniFileName_);
+	useSDK_ = 0 != GetPrivateProfileInt(_T("Setting"), _T("useSDK"), 0, szIniFileName_);
 	jkcw_ = new Cjk(m_pApp);
 
 	CoInitialize(NULL);
