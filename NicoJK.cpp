@@ -540,8 +540,10 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 				char buf[10240];
 				int read;
 				read = recv(soc, buf, sizeof(buf)-1, 0);
-				buf[read] = '\0';
-				strcat_s(pThis->szChannelBuf_, buf);
+				if (read != SOCKET_ERROR) {
+					buf[read] = '\0';
+					strcat_s(pThis->szChannelBuf_, buf);
+				}
 				break;
 			case FD_CLOSE:
 				if (strlen(buf)) {

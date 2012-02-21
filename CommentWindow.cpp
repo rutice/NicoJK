@@ -171,8 +171,7 @@ class ChatManager {
 		const wchar_t *ee = wcschr(str + 1, L'<');
 		if (es && ee) {
 			++es;
-			wcsncpy_s(out, len, es, ee - es);
-			out[min(len - 1, ee - es)] = L'\0';
+			wcsncpy_s(out, len, es, min(len - 1, ee - es));
 
 			// entity reference
 			wchar_t *p = wcschr(out, L'&');
@@ -205,9 +204,7 @@ class ChatManager {
 			start += wcslen(token);
 			const wchar_t *end = wcschr(start, L'"');
 			if (end) {
-				wcsncpy_s(out, len, start, min(end - start, len - 1));
-				out[min(end - start, len - 1)] = '\0';
-				return true;
+				return wcsncpy_s(out, len, start, min(end - start, len - 1)) != EINVAL;
 			}
 		}
 		return false;
@@ -237,7 +234,8 @@ public:
 			
 			Chat c(vpos, szText);
 			if (xmlGetAttr(str, ATTR(L"mail"), szCommand, 1024)) {
-				wchar_t *pt = wcstok(szCommand, L" ");
+				wchar_t *context = NULL;
+				wchar_t *pt = wcstok_s(szCommand, L" ", &context);
 				while (pt != NULL) {
 					if (wcscmp(pt, L"184") == 0) {
 						; // skip
@@ -251,7 +249,7 @@ public:
 							c.color = color;
 						}
 					}
-					pt = wcstok(NULL, L" ");
+					pt = wcstok_s(NULL, L" ", &context);
 				}
 			}
 
@@ -604,8 +602,8 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 		SetBkMode(memDC_, TRANSPARENT);
 		HGDIOBJ hPrevFont = SelectObject(memDC_, CreateFont(28));
 		
-		std::list<Chat>::const_iterator i;
-		for (i=manager.chat_.cbegin(); i!=manager.chat_.cend(); ++i) {
+		std::list<Chat>::const_iterator i = manager.chat_.begin();
+		for (; i!=manager.chat_.cend(); ++i) {
 			// skip head
 			if (i->vpos < basevpos - VPOS_LEN) {
 				continue;
@@ -616,7 +614,7 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 			}
 			if (i->position == CHAT_POS_SHITA) {
 				RECT rc;
-				rc.top = rcWnd.bottom - 30 - i->line * 30;
+				rc.top = rcWnd.bottom - 30 - static_cast<LONG>(i->line * 30);
 				rc.bottom = rc.top + 30;
 				rc.left = 0;
 				rc.right = rcWnd.right;
@@ -718,6 +716,10 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 				char buf[10240];
 				int read;
 				read = recv(soc, buf, sizeof(buf)-1, 0);
+				shutdown(soc, SD_BOTH);
+				if (read == SOCKET_ERROR) {
+					break;
+				}
 				buf[read] = '\0';
 				if (strstr(buf, "done=true")) {
 					char szMs[1024], szMsPort[1024];
@@ -745,7 +747,6 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 					}
 				}
 				OutputDebugStringA(buf);
-				shutdown(pThis->socGetflv_, SD_BOTH);
 				break;
 			case FD_CLOSE:
 				OutputDebugString(_T("getflv Closed"));
@@ -774,6 +775,9 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 				char buf[10240];
 				int read;
 				read = recv(soc, buf, sizeof(buf)-1, 0);
+				if (read == SOCKET_ERROR) {
+					break;
+				}
 				wchar_t wcsBuf[10240];
 				int wcsLen;
 				wcsLen = MultiByteToWideChar(CP_UTF8, 0, buf, read, wcsBuf, 10240);
@@ -790,7 +794,7 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 				break;
 			case FD_CLOSE:
 				OutputDebugString(_T("Comment Closed"));
-				closesocket(pThis->socComment_);
+				closesocket(soc);
 				pThis->socComment_ = INVALID_SOCKET;
 				break;
 			}
