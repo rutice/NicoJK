@@ -4,3 +4,5 @@
 
 #define IDD_FORCE                               101
 #define IDC_FORCELIST                           1003
+#define IDC_LOG                                 1006
+#define IDC_TAB                                 1007

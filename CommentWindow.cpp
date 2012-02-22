@@ -255,6 +255,8 @@ public:
 
 			if (hWnd_) {
 				UpdateChat(c);
+				// コメントウィンドウにコメントを通知
+				SendMessage(hWnd_, WM_NEWCOMMENT, 0L, (LPARAM)szText);
 			}
 
 			chat_.push_back(c);
@@ -389,8 +391,9 @@ public:
 };
 ChatManager manager;
 
-Cjk::Cjk(TVTest::CTVTestApp *pApp) :
+Cjk::Cjk(TVTest::CTVTestApp *pApp, HWND hForce) :
 	m_pApp(pApp),
+	hForce_(hForce),
 	hWnd_(NULL),
 	memDC_(NULL),
 	msPosition_(0)
@@ -675,6 +678,9 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 	case WM_CLOSE:
 		PostMessage(GetParent(hWnd), WM_CLOSE, 0, 0);
 		DestroyWindow(hWnd);
+		break;
+	case WM_NEWCOMMENT:
+		SendMessage(pThis->hForce_, WM_NEWCOMMENT, 0L, lp);
 		break;
 	case WMS_JKHOST_EVENT:
 		if (WSAGETASYNCERROR(lp) == 0) {

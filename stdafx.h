@@ -14,4 +14,5 @@
 #include <MMSystem.h>
 #include <Objbase.h>
 #include <Shlwapi.h>
+#include <CommCtrl.h>
 #include <tchar.h>

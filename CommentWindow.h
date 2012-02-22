@@ -16,10 +16,13 @@
 
 #define COLOR_TRANSPARENT RGB(254, 254, 254)
 
+#define WM_NEWCOMMENT (WM_APP+200)
+
 class Cjk {
 	TVTest::CTVTestApp *m_pApp;
 
 	HWND hWnd_;
+	HWND hForce_;
 	// Draw
 	HDC memDC_;
 	HBITMAP hBitmap_;
@@ -39,7 +42,7 @@ class Cjk {
 	static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 public:
-	Cjk(TVTest::CTVTestApp *pApp);
+	Cjk(TVTest::CTVTestApp *pApp, HWND hForce);
 	void Create(HWND hParent);
 	void Destroy();
 	void Resize(int left, int top, int width, int height);

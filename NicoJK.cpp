@@ -56,9 +56,10 @@ bool CNicoJK::Initialize() {
 		cwMode_ = 0;
 	}
 
-	// 独自実装？
-	useSDK_ = 0 != GetPrivateProfileInt(_T("Setting"), _T("useSDK"), 0, szIniFileName_);
-	jkcw_ = new Cjk(m_pApp);
+	INITCOMMONCONTROLSEX ic;
+	ic.dwSize = sizeof(INITCOMMONCONTROLSEX);
+	ic.dwICC = ICC_TAB_CLASSES;
+	InitCommonControlsEx(&ic);
 
 	CoInitialize(NULL);
 	WSADATA wsaData;
@@ -69,6 +70,10 @@ bool CNicoJK::Initialize() {
 	// 勢い窓作成
 	hForce_ = CreateDialogParam(g_hinstDLL, MAKEINTRESOURCE(IDD_FORCE),
 									 NULL, (DLGPROC)ForceDialogProc, (LPARAM)this);
+
+	// 独自実装
+	useSDK_ = 0 != GetPrivateProfileInt(_T("Setting"), _T("useSDK"), 0, szIniFileName_);
+	jkcw_ = new Cjk(m_pApp, hForce_);
 
 	// イベントコールバック関数を登録
 	m_pApp->SetEventCallback(EventCallback, this);
@@ -249,6 +254,7 @@ void CNicoJK::OnChannelChange() {
 
 	int jkID = GetJKByChannelName(info.szChannelName);
 	ForceDialog_UpdateForce();
+	ListBox_ResetContent(GetDlgItem(hForce_, IDC_LOG));
 
 	if (jkID != -1) {
 		StartJK(jkID);
@@ -473,17 +479,32 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 		{
 			pThis = (CNicoJK*)lparam;
 			SetWindowLongPtr(hwnd, DWL_USER, lparam);
+
+			TCITEM tci;
+			tci.mask = TCIF_TEXT;
+			tci.pszText = _T("勢い");
+			TabCtrl_InsertItem(GetDlgItem(hwnd, IDC_TAB), 0, &tci);
+
+			tci.pszText = _T("ログ");
+			TabCtrl_InsertItem(GetDlgItem(hwnd, IDC_TAB), 1, &tci);
+
 			SetTimer(hwnd, TIMER_UPDATE, 20000, NULL);
 			// 位置を復元
 			int iX = GetPrivateProfileInt(_T("Window"), _T("ForceX"), INT_MAX, pThis->szIniFileName_);
 			int iY = GetPrivateProfileInt(_T("Window"), _T("ForceY"), INT_MAX, pThis->szIniFileName_);
+			int iW = GetPrivateProfileInt(_T("Window"), _T("ForceWidth"), INT_MAX, pThis->szIniFileName_);
+			int iH = GetPrivateProfileInt(_T("Window"), _T("ForceHeight"), INT_MAX, pThis->szIniFileName_);
 			HMONITOR hMon = ::MonitorFromWindow(pThis->m_pApp->GetAppWindow(), MONITOR_DEFAULTTONEAREST);
 			MONITORINFO mi;
 			mi.cbSize = sizeof(MONITORINFO);
 			if (::GetMonitorInfo(hMon, &mi)) {
 				if (mi.rcMonitor.left <= iX && iX < mi.rcMonitor.right
 					&& mi.rcMonitor.top <= iY && iY < mi.rcMonitor.bottom) {
-					SetWindowPos(hwnd, NULL, iX, iY, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+					UINT flag = SWP_NOZORDER;
+					if (iW == INT_MAX || iH == INT_MAX) {
+						flag |= SWP_NOSIZE;
+					}
+					SetWindowPos(hwnd, NULL, iX, iY, iW, iH, flag);
 				}
 			}
 		}
@@ -497,6 +518,10 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 			WritePrivateProfileString(_T("Window"), _T("ForceX"), sz, pThis->szIniFileName_);
 			wsprintf(sz, _T("%d"), rc.top);
 			WritePrivateProfileString(_T("Window"), _T("ForceY"), sz, pThis->szIniFileName_);
+			wsprintf(sz, _T("%d"), rc.right - rc.left);
+			WritePrivateProfileString(_T("Window"), _T("ForceWidth"), sz, pThis->szIniFileName_);
+			wsprintf(sz, _T("%d"), rc.bottom - rc.top);
+			WritePrivateProfileString(_T("Window"), _T("ForceHeight"), sz, pThis->szIniFileName_);
 			EndDialog(hwnd, IDOK);
 		}
 		break;
@@ -555,17 +580,79 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 			}
 		}
 		return TRUE;
+	case WM_NEWCOMMENT:
+		if (pThis) {
+			wchar_t time[15];
+			_wstrtime_s(time);
+			wchar_t sz[1000];
+			wsprintfW(sz, L"%s %s", time, (LPCWSTR)lparam);
+			HWND hList = GetDlgItem(hwnd, IDC_LOG);
+			int index = ListBox_AddString(hList, sz);
+			ListBox_SetTopIndex(hList, index);
+			if (index > COMMENT_TRIMSTART) {
+				for (; index > COMMENT_TRIMEND; --index) {
+					ListBox_DeleteString(hList, 0);
+				}
+			}
+		}
+		break;
 	case WM_TIMER:
 		if (pThis) {
 			// 勢いを更新する
 			return pThis->ForceDialog_UpdateForce();
 		}
 		break;
+	case WM_SIZE:
+		RECT rcParent;
+		GetWindowRect(hwnd, &rcParent);
+		RECT rcParentClient;
+		GetClientRect(hwnd, &rcParentClient);
+		RECT rcTab;
+		GetClientRect(GetDlgItem(hwnd, IDC_TAB), &rcTab);
+		SetWindowPos(GetDlgItem(hwnd, IDC_TAB), NULL, 0, 0, rcParentClient.right, rcTab.bottom, SWP_NOZORDER | SWP_NOMOVE);
+		RECT rc;
+		GetWindowRect(GetDlgItem(hwnd, IDC_FORCELIST), &rc);
+		SetWindowPos(
+			GetDlgItem(hwnd, IDC_FORCELIST),
+			NULL,
+			0,
+			0,
+			rcParentClient.right - rcParentClient.left,
+			rcParentClient.bottom - rcTab.bottom,
+			SWP_NOMOVE | SWP_NOZORDER);
+		SetWindowPos(
+			GetDlgItem(hwnd, IDC_LOG),
+			NULL,
+			0,
+			0,
+			rcParentClient.right - rcParentClient.left,
+			rcParentClient.bottom - rcTab.bottom,
+			SWP_NOMOVE | SWP_NOZORDER);
+		break;
 	case WM_COMMAND:
 		if (HIWORD(wparam) == LBN_SELCHANGE) {
-			if (pThis) {
+			if (LOWORD(wparam) == IDC_FORCELIST && pThis) {
 				// リストで選択したチャンネルに切り替える
 				return pThis->ForceDialog_OnSelChange((HWND)lparam);
+			}
+		}
+		break;
+	case WM_NOTIFY:
+		switch (((LPNMHDR)lparam)->code) {
+		case TCN_SELCHANGE:
+			if (((LPNMHDR)lparam)->idFrom == IDC_TAB) {
+				HWND hTab = ((LPNMHDR)lparam)->hwndFrom;
+				int selected = TabCtrl_GetCurSel(hTab);
+				switch (selected) {
+				case 0:
+					ShowWindow(GetDlgItem(hwnd, IDC_FORCELIST), SW_SHOW);
+					ShowWindow(GetDlgItem(hwnd, IDC_LOG), SW_HIDE);
+					break;
+				case 1:
+					ShowWindow(GetDlgItem(hwnd, IDC_FORCELIST), SW_HIDE);
+					ShowWindow(GetDlgItem(hwnd, IDC_LOG), SW_SHOW);
+					break;
+				}
 			}
 		}
 		break;

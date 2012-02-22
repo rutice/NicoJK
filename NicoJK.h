@@ -9,12 +9,16 @@
 
 // ライブラリ
 #pragma comment(lib, "shlwapi.lib")
+#pragma comment(lib, "comctl32.lib")
 
 // ニコニコ実況のCOM DLL（パスが違う場合は修正する）
 #import "C:\Program Files (x86)\niwango\nicom\jkNiCOM.dll"  no_namespace named_guids raw_interfaces_only
 
 // 定数
 const UINT_PTR TIMER_UPDATE = 1;
+// TRIMSTART行を超えたらTRIMENDまで削る
+const int COMMENT_TRIMSTART = 5100;
+const int COMMENT_TRIMEND = 5000;
 
 // 通信用
 #define WMS_APIJK_HOST (WM_APP + 101)
