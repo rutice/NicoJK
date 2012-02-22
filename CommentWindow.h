@@ -14,7 +14,7 @@
 #define jkTimerID 1021
 #define IDB_START 1
 
-#define COLOR_TRANSPARENT RGB(254, 254, 254)
+#define COLOR_TRANSPARENT RGB(12, 12, 12)
 
 #define WM_NEWCOMMENT (WM_APP+200)
 
