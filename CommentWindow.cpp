@@ -503,9 +503,9 @@ void Cjk::Resize(int left, int top, int width, int height) {
 		SetWindowPos(hWnd_, HWND_TOPMOST, left + 10, top + 30, width - 20, height - 60, SWP_NOACTIVATE);
 	} else {
 		if (width && height) {
-			SetWindowPos(hWnd_, HWND_NOTOPMOST, left + 10, top + 30, width - 20, height - 60, SWP_NOACTIVATE);
+			SetWindowPos(hWnd_, NULL, left + 10, top + 30, width - 20, height - 60, SWP_NOZORDER | SWP_NOACTIVATE);
 		} else {
-			SetWindowPos(hWnd_, HWND_NOTOPMOST, left + 10, top + 30, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE);
+			SetWindowPos(hWnd_, NULL, left + 10, top + 30, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
 		}
 	}
 	SetupObjects();
@@ -653,7 +653,7 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 	case WM_CREATE:
 		SetLayeredWindowAttributes(hWnd, COLOR_TRANSPARENT, 0, LWA_COLORKEY);
 		pThis = (Cjk*)((CREATESTRUCT*)lp)->lpCreateParams;
-		SetTimer(hWnd, jkTimerID, 50, NULL);
+		SetTimer(hWnd, jkTimerID, 33, NULL);
 		pThis->socGetflv_ = INVALID_SOCKET;
 		pThis->socComment_ = INVALID_SOCKET;
 		manager.PrepareChats(hWnd);
@@ -671,9 +671,7 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		EndPaint(hWnd, &ps);
 		break;
 	case WM_TIMER:
-		hdc = GetDC(hWnd);
-		pThis->DrawComments(hWnd, hdc);
-		ReleaseDC(hWnd, hdc);
+		InvalidateRect(hWnd, NULL, FALSE);
 		break;
 	case WM_CLOSE:
 		PostMessage(GetParent(hWnd), WM_CLOSE, 0, 0);
