@@ -148,10 +148,12 @@ class ChatManager {
 	int *linesShita_;
 	int *linesUe_;
 	int *counts_;
+	int iYPitch_;
 
 	// GDI
 	RECT oldRect_;
 	HWND hWnd_;
+	HWND hNotify_;
 	HDC hDC_;
 	HFONT hFont_;
 	HGDIOBJ hOld_;
@@ -218,8 +220,10 @@ public:
 		linesShita_(NULL),
 		linesUe_(NULL),
 		counts_(NULL),
+		iYPitch_(0),
 		hDC_(NULL),
-		hWnd_(NULL)
+		hWnd_(NULL),
+		hNotify_(NULL)
 	{
 		SetRectEmpty(&oldRect_);
 	}
@@ -256,7 +260,9 @@ public:
 			if (hWnd_) {
 				UpdateChat(c);
 				// コメントウィンドウにコメントを通知
-				SendMessage(hWnd_, WM_NEWCOMMENT, 0L, (LPARAM)szText);
+			}
+			if (hNotify_) {
+				SendMessage(hNotify_, WM_NEWCOMMENT, 0L, (LPARAM)szText);
 			}
 
 			chat_.push_back(c);
@@ -354,7 +360,17 @@ public:
 		CopyRect(&oldRect_, &rc);
 		
 		window_width_ = rc.right;
-		int newLineCount = max(1, rc.bottom / 30 - 1);
+		int yPitch = 30;
+		int newLineCount = max(1, rc.bottom / yPitch - 1);
+		// 適当に調整
+		if (newLineCount > 15) {
+			newLineCount = 15;
+			yPitch = rc.bottom / newLineCount;
+		} else if (newLineCount < 8) {
+			newLineCount = 8;
+			yPitch = rc.bottom / newLineCount;
+		}
+
 		if (linecount_ == newLineCount) {
 			return;
 		}
@@ -362,7 +378,8 @@ public:
 		ClearObjects();
 		hWnd_ = hWnd;
 		hDC_ = GetDC(hWnd);
-		hFont_ = CreateFont(28);
+		hFont_ = CreateFont(yPitch - 2);
+		iYPitch_ = yPitch;
 		HGDIOBJ hOld = SelectObject(hDC_, hFont_);
 
 		delete [] lines_;
@@ -388,6 +405,18 @@ public:
 			dprintf(L"line[%d] = %d", i, counts_[i]);
 		}
 	}
+
+	HFONT GetFont() {
+		return hFont_;
+	}
+
+	int GetYPitch() {
+		return iYPitch_;
+	}
+
+	void SetNotifyWindow(HWND hWnd) {
+		hNotify_ = hWnd;
+	}
 };
 ChatManager manager;
 
@@ -410,23 +439,45 @@ void Cjk::Create(HWND hParent) {
 		wc.cbWndExtra = 0;
 		wc.hInstance = NULL;
 		wc.hIcon = NULL;
-		wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+		wc.hCursor = NULL;
 		wc.hbrBackground = CreateSolidBrush(COLOR_TRANSPARENT);
 		wc.lpszMenuName = NULL;
 		wc.lpszClassName = TEXT("ru.jk");
 		wc.hIconSm = NULL;
 
 		RegisterClassEx(&wc);
+
+		wc.lpfnWndProc = SocketProc;
+		wc.hbrBackground = NULL;
+		wc.lpszClassName = _T("ru.jk.socket");
+		RegisterClassEx(&wc);
+
+		hSocket_ = CreateWindowEx(
+			WS_EX_NOACTIVATE,
+			_T("ru.jk.socket"),
+			_T("TvtPlayJK"),
+			WS_POPUP,
+			0, 0,
+			1, 1,
+			m_pApp->GetAppWindow(),
+			NULL,
+			NULL,
+			(LPVOID)this);
+
 		bInitialized = true;
 	}
 
+	if (m_pApp->GetFullscreen()) {
+		hParent = GetFullscreenWindow();
+	}
+
 	hWnd_ = CreateWindowEx(
-		WS_EX_LAYERED,
+		WS_EX_LAYERED | WS_EX_NOACTIVATE,
 		(LPCTSTR)_T("ru.jk"),
-		_T("TvtPlayJK"),
-		WS_POPUP,
+		_T("NicoJK"),
+		WS_POPUP | WS_VISIBLE,
 		100, 100,
-		200, 200,
+		400, 400,
 		hParent,
 		NULL,
 		NULL,
@@ -444,13 +495,16 @@ void Cjk::Create(HWND hParent) {
 		NULL
 		);
 
-	ShowWindow(hWnd_, SW_SHOW);
-	UpdateWindow(hWnd_);
-
-	Resize(m_pApp->GetAppWindow());
+	this->ResizeToVideoWindow();
 }
 
 void Cjk::Destroy() {
+	ClearObjects();
+	DestroyWindow(hWnd_);
+	hWnd_ = NULL;
+}
+
+void Cjk::DestroySocket() {
 	if (socGetflv_ != INVALID_SOCKET) {
 		shutdown(socGetflv_, SD_BOTH);
 		closesocket(socComment_);
@@ -461,9 +515,6 @@ void Cjk::Destroy() {
 		closesocket(socComment_);
 		socComment_ = INVALID_SOCKET;
 	}
-	ClearObjects();
-	DestroyWindow(hWnd_);
-	hWnd_ = NULL;
 }
 
 HWND Cjk::GetFullscreenWindow() {
@@ -483,30 +534,28 @@ HWND Cjk::GetFullscreenWindow() {
 	return NULL;
 }
 
-void Cjk::Resize(HWND hApp) {
+void Cjk::ResizeToVideoWindow() {
 	RECT rc;
-	GetWindowRect(hApp, &rc);
-	Resize(rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
-}
-
-void Cjk::Resize(int left, int top, int width, int height) {
-	bool fullScreen = m_pApp->GetFullscreen();
-	dprintf(L"Resize %x", hWnd_);
-	if (fullScreen) {
-		HWND hFull = GetFullscreenWindow();
-		RECT rc;
-		GetWindowRect(hFull, &rc);
-		left = rc.left;
-		top = rc.top;
-		width = rc.right - rc.left;
-		height = rc.bottom - rc.top;
-		SetWindowPos(hWnd_, HWND_TOPMOST, left + 10, top + 30, width - 20, height - 60, SWP_NOACTIVATE);
+	if (m_pApp->GetFullscreen()) {
+		GetWindowRect(GetFullscreenWindow(), &rc);
+		SetWindowPos(
+			hWnd_,
+			HWND_TOPMOST,
+			rc.left,
+			rc.top,
+			rc.right - rc.left,
+			rc.bottom - rc.top,
+			SWP_NOACTIVATE);
 	} else {
-		if (width && height) {
-			SetWindowPos(hWnd_, NULL, left + 10, top + 30, width - 20, height - 60, SWP_NOZORDER | SWP_NOACTIVATE);
-		} else {
-			SetWindowPos(hWnd_, NULL, left + 10, top + 30, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
-		}
+		GetWindowRect(m_pApp->GetAppWindow(), &rc);
+		SetWindowPos(
+			hWnd_,
+			NULL,
+			rc.left + 10,
+			rc.top + 30,
+			rc.right - rc.left - 20,
+			rc.bottom - rc.top - 60,
+			SWP_NOZORDER | SWP_NOACTIVATE);
 	}
 	SetupObjects();
 	manager.PrepareChats(hWnd_);
@@ -558,6 +607,7 @@ bool GetToken(const char *in, const char *token, char *out, int len) {
 
 void Cjk::Open(int jkCh) {
 	// ウィンドウを一旦壊す
+	DestroySocket();
 	manager.Clear();
 	Destroy();
 	Create(m_pApp->GetAppWindow());
@@ -565,7 +615,7 @@ void Cjk::Open(int jkCh) {
 	msPositionBase_ = 0;
 	jkCh_ = jkCh;
 
-	WSAAsyncGetHostByName(hWnd_, WMS_JKHOST_EVENT, "jk.nicovideo.jp", szHostbuf_, MAXGETHOSTSTRUCT);
+	WSAAsyncGetHostByName(hSocket_, WMS_JKHOST_EVENT, "jk.nicovideo.jp", szHostbuf_, MAXGETHOSTSTRUCT);
 
 	this->SetLiveMode();
 	this->Start();
@@ -600,10 +650,11 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 		RECT rcWnd;
 		GetClientRect(hWnd, &rcWnd);
 		int width = rcWnd.right;
+		int yPitch = manager.GetYPitch();
 
 		int basevpos = (msPosition_ - msPositionBase_ + (timeGetTime() - msSystime_)) / 10;
 		SetBkMode(memDC_, TRANSPARENT);
-		HGDIOBJ hPrevFont = SelectObject(memDC_, CreateFont(28));
+		HGDIOBJ hPrevFont = SelectObject(memDC_, manager.GetFont());
 		
 		std::list<Chat>::const_iterator i = manager.chat_.begin();
 		for (; i!=manager.chat_.cend(); ++i) {
@@ -617,7 +668,7 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 			}
 			if (i->position == CHAT_POS_SHITA) {
 				RECT rc;
-				rc.top = rcWnd.bottom - 30 - static_cast<LONG>(i->line * 30);
+				rc.top = rcWnd.bottom - 30 - static_cast<LONG>(i->line * yPitch);
 				rc.bottom = rc.top + 30;
 				rc.left = 0;
 				rc.right = rcWnd.right;
@@ -629,7 +680,7 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER | DT_NOPREFIX);				
 			} else {
 				int x = static_cast<int>(width - (float)(i->width + width) * (basevpos - i->vpos) / VPOS_LEN);
-				int y = static_cast<int>(10 + 30 * i->line);
+				int y = static_cast<int>(10 + yPitch * i->line);
 				const std::wstring &text = i->text;
 				SetTextColor(memDC_, RGB(0, 0, 0));
 				TextOutW(memDC_, x+2, y+2, text.c_str(), text.length());
@@ -637,7 +688,7 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 				TextOutW(memDC_, x, y, text.c_str(), text.length());
 			}
 		}
-		DeleteObject(SelectObject(memDC_, hPrevFont));
+		SelectObject(memDC_, hPrevFont);
 
 		BitBlt(hDC, 0, 0, rcWnd.right - rcWnd.left, rc.bottom - rc.top, memDC_, 0, 0, SRCCOPY);
 	}
@@ -654,9 +705,6 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		SetLayeredWindowAttributes(hWnd, COLOR_TRANSPARENT, 0, LWA_COLORKEY);
 		pThis = (Cjk*)((CREATESTRUCT*)lp)->lpCreateParams;
 		SetTimer(hWnd, jkTimerID, 33, NULL);
-		pThis->socGetflv_ = INVALID_SOCKET;
-		pThis->socComment_ = INVALID_SOCKET;
-		manager.PrepareChats(hWnd);
 		break;
 	case WM_COMMAND:
 		switch(LOWORD(wp)) {
@@ -665,6 +713,9 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 			break;
 		}
 		break;
+	case WM_SIZE:
+		manager.PrepareChats(hWnd);
+		break;
 	case WM_PAINT:
 		hdc = BeginPaint(hWnd, &ps);
 		pThis->DrawComments(hWnd, hdc);
@@ -672,6 +723,55 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		break;
 	case WM_TIMER:
 		InvalidateRect(hWnd, NULL, FALSE);
+		UpdateWindow(hWnd);
+		break;
+	case WM_CLOSE:
+		KillTimer(hWnd, jkTimerID);
+		PostMessage(GetParent(hWnd), WM_CLOSE, 0, 0);
+		DestroyWindow(hWnd);
+		break;
+	case WM_LBUTTONDOWN:
+	case WM_LBUTTONUP:
+	case WM_LBUTTONDBLCLK:
+	case WM_RBUTTONDOWN:
+	case WM_RBUTTONUP:
+	case WM_RBUTTONDBLCLK:
+	case WM_MBUTTONDOWN:
+	case WM_MBUTTONUP:
+	case WM_MBUTTONDBLCLK:
+	case WM_MOUSEMOVE:
+		{
+			POINT pt;
+			RECT rc;
+
+			pt.x = GET_X_LPARAM(lp);
+			pt.y = GET_Y_LPARAM(lp);
+			HWND hTarget = pThis->m_pApp->GetAppWindow();
+			if (pThis->m_pApp->GetFullscreen()) {
+				hTarget = pThis->GetFullscreenWindow();
+			} 
+			MapWindowPoints(hWnd, hTarget, &pt, 1);
+			GetClientRect(hTarget,&rc);
+			if (PtInRect(&rc,pt)) {
+				return SendMessage(hTarget, msg, wp, MAKELPARAM(pt.x,pt.y));
+			}
+		}
+		return 0;
+	default:
+		return (DefWindowProc(hWnd, msg, wp, lp));
+	}
+	return 0;
+}
+
+LRESULT CALLBACK Cjk::SocketProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
+	static Cjk *pThis = NULL;
+
+	switch (msg) {
+	case WM_CREATE:
+		pThis = (Cjk*)((CREATESTRUCT*)lp)->lpCreateParams;
+		pThis->socGetflv_ = INVALID_SOCKET;
+		pThis->socComment_ = INVALID_SOCKET;
+		manager.SetNotifyWindow(hWnd);
 		break;
 	case WM_CLOSE:
 		PostMessage(GetParent(hWnd), WM_CLOSE, 0, 0);
@@ -767,7 +867,6 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 			switch(WSAGETSELECTEVENT(lp)) {
 			case FD_CONNECT:		/* サーバ接続したイベントの場合 */
 				OutputDebugString(_T("Comment Connected"));
-				manager.PrepareChats(hWnd);
 				break;
 			case FD_WRITE:
 				OutputDebugString(_T("Comment Write"));
@@ -804,10 +903,8 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 			}
 		}
 		return TRUE;
-		default:
-			return (DefWindowProc(hWnd, msg, wp, lp));
 	}
-	return 0;
+	return DefWindowProc(hWnd, msg, wp, lp);
 }
 
 BOOL Cjk::WindowMsgCallback(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam,LRESULT *pResult) {
@@ -822,7 +919,7 @@ BOOL Cjk::WindowMsgCallback(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam,LRES
 		}
 	case WM_MOVE:
     case WM_SIZE:
-		Resize(m_pApp->GetAppWindow());
+		ResizeToVideoWindow();
 		break;
 	}
 	return FALSE;
@@ -841,7 +938,8 @@ LRESULT Cjk::EventCallback(UINT Event, LPARAM lParam1, LPARAM lParam2) {
     case TVTest::EVENT_FULLSCREENCHANGE:
         // 全画面表示状態が変化した
         if (m_pApp->IsPluginEnabled()) {
-            Resize(m_pApp->GetAppWindow());
+			Destroy();
+			Create(m_pApp->GetAppWindow());
 		}
         break;
 	}

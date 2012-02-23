@@ -22,6 +22,7 @@ class Cjk {
 	TVTest::CTVTestApp *m_pApp;
 
 	HWND hWnd_;
+	HWND hSocket_;
 	HWND hForce_;
 	// Draw
 	HDC memDC_;
@@ -40,13 +41,14 @@ class Cjk {
 	SOCKET socComment_;
 
 	static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
+	static LRESULT CALLBACK SocketProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 public:
 	Cjk(TVTest::CTVTestApp *pApp, HWND hForce);
 	void Create(HWND hParent);
 	void Destroy();
-	void Resize(int left, int top, int width, int height);
-	void Resize(HWND hApp);
+	void DestroySocket();
+	void ResizeToVideoWindow();
 	HWND GetFullscreenWindow();
 
 	void Open(int jkCh);
