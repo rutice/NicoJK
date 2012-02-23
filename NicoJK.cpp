@@ -249,7 +249,9 @@ int CNicoJK::GetJKByChannelName(const wchar_t *name) {
 
 void CNicoJK::OnChannelChange() {
 	TVTest::ChannelInfo info;
-	m_pApp->GetCurrentChannelInfo(&info);
+	if (!m_pApp->GetCurrentChannelInfo(&info)) {
+		return;
+	}
 	OutputDebugStringW(info.szChannelName);
 
 	int jkID = GetJKByChannelName(info.szChannelName);
@@ -507,6 +509,10 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 					SetWindowPos(hwnd, NULL, iX, iY, iW, iH, flag);
 				}
 			}
+			LOGFONT lgf;
+			GetObject((HANDLE)SendDlgItemMessage(hwnd, IDC_FORCELIST, WM_GETFONT, 0L, 0L), sizeof(lgf), &lgf);
+			lgf.lfHeight = static_cast<LONG>(lgf.lfHeight * 1.2);
+			SendDlgItemMessage(hwnd, IDC_FORCELIST, WM_SETFONT, (WPARAM)CreateFontIndirect(&lgf), 0L);
 		}
 		return TRUE;
 	case WM_CLOSE:
