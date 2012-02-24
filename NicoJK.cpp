@@ -506,6 +506,8 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 					if (iW == INT_MAX || iH == INT_MAX) {
 						flag |= SWP_NOSIZE;
 					}
+					iW = max(50, min(iW, mi.rcMonitor.right - mi.rcMonitor.left));
+					iH = max(50, min(iH, mi.rcMonitor.right - mi.rcMonitor.left));
 					SetWindowPos(hwnd, NULL, iX, iY, iW, iH, flag);
 				}
 			}
