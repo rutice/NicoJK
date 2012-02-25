@@ -365,10 +365,10 @@ public:
 		// “K“–‚É’²®
 		if (newLineCount > 15) {
 			newLineCount = 15;
-			yPitch = rc.bottom / newLineCount;
+			yPitch = rc.bottom / (newLineCount + 1);
 		} else if (newLineCount < 8) {
 			newLineCount = 8;
-			yPitch = rc.bottom / newLineCount;
+			yPitch = rc.bottom / (newLineCount + 1);
 		}
 
 		if (linecount_ == newLineCount) {
@@ -668,8 +668,8 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 			}
 			if (i->position == CHAT_POS_SHITA) {
 				RECT rc;
-				rc.top = rcWnd.bottom - 30 - static_cast<LONG>(i->line * yPitch);
-				rc.bottom = rc.top + 30;
+				rc.top = rcWnd.bottom - yPitch - static_cast<LONG>(i->line * yPitch);
+				rc.bottom = rc.top + yPitch;
 				rc.left = 0;
 				rc.right = rcWnd.right;
 				const std::wstring &text = i->text;
