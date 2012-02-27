@@ -56,6 +56,14 @@ public:
 	int width; // 表示幅（ピクセル）
 	COLORREF color;
 	CHAT_POSITION position;
+	Chat()
+		: vpos(-1000),
+		  text(L""),
+		  line(0),
+		  width(0),
+		  color(0),
+		  position(CHAT_POS_DEFAULT)
+	{ }
 	Chat(int vpos_in, std::wstring text_in)
 		: vpos(vpos_in),
 		  text(text_in),
@@ -136,18 +144,17 @@ COLORREF GetColor(const wchar_t *command) {
 const int VPOS_LEN = 400;
 
 class ChatManager {
-	struct filter {
+	struct min_vpos_filter {
 		int minvpos_;
-		filter(int minvpos) : minvpos_(minvpos) {}
+		min_vpos_filter(int minvpos) : minvpos_(minvpos) {}
 		bool operator()(const Chat& x) const { return x.vpos < minvpos_; }
 	}; 
 
 	int linecount_;
 	int window_width_;
-	int *lines_;
-	int *linesShita_;
-	int *linesUe_;
-	int *counts_;
+	std::vector<Chat> lines_;
+	std::vector<Chat> linesShita_;
+	std::vector<Chat> linesUe_;
 	int iYPitch_;
 
 	// GDI
@@ -216,10 +223,6 @@ public:
 
 	ChatManager() :
 		linecount_(0),
-		lines_(NULL),
-		linesShita_(NULL),
-		linesUe_(NULL),
-		counts_(NULL),
 		iYPitch_(0),
 		hDC_(NULL),
 		hWnd_(NULL),
@@ -271,23 +274,43 @@ public:
 	}
 
 	bool trim(int minvpos) {
-		chat_.remove_if(filter(minvpos));
+		chat_.remove_if(min_vpos_filter(minvpos));
 		return true;
 	}
 
+	// コメントの表示ラインを設定する
 	void UpdateChat(Chat &c) {
-		// あいてる列を探す（j 列）
-		// TODO: 流れる速度に応じて選ぶ
-		int *target = lines_;
 		if (c.position == CHAT_POS_SHITA) {
-			target = linesShita_;
+			int j;
+			for (j=0; j<linecount_; j++) {
+				if (linesShita_[j].vpos + VPOS_LEN < c.vpos) {
+					break;
+				}
+			}
+			if (j == linecount_) {
+				j = 0;
+			}
+			c.line = static_cast<float>(j);
+			linesShita_[j] = Chat(c);
+			dprintf(L"%d = %d\n", j, c.vpos);
+			return;
 		} else if (c.position == CHAT_POS_UE) {
 			// TODO: 上も対応・・・しないかも
 		}
 
+		SIZE size;
+		GetTextExtentPoint32W(hDC_, c.text.c_str(), c.text.length(), &size);
+		c.width = size.cx;
+
 		int j;
 		for (j=0; j<linecount_; j++) {
-			if (target[j] < c.vpos) {
+			Chat &chatj = lines_[j];
+			// まだ前のが右端から出きってないとダメ
+			if (chatj.vpos + 10 + VPOS_LEN * chatj.width / (window_width_ + chatj.width) > c.vpos) {
+				continue;
+			}
+			// 前のに追いつかなければおｋ
+			if (chatj.vpos + 10 + VPOS_LEN < c.vpos + VPOS_LEN * window_width_ / (window_width_ + c.width)) {
 				break;
 			}
 		}
@@ -298,8 +321,8 @@ public:
 			int vpos_min = 0x7fffffff;
 			int line_index = 0;
 			for (j=0; j<linecount_; j++) {
-				if (target[j] < vpos_min) {
-					vpos_min = lines_[j];
+				if (lines_[j].vpos < vpos_min) {
+					vpos_min = lines_[j].vpos;
 					line_index = j;
 				}
 			}
@@ -307,43 +330,15 @@ public:
 			c.line = static_cast<float>(0.5 + j);
 		}
 
-		if (c.position == CHAT_POS_SHITA) {
-			linesShita_[j] = c.vpos + VPOS_LEN;
-			return;
-		}
-
-		SIZE size;
-		GetTextExtentPoint32W(hDC_, c.text.c_str(), c.text.length(), &size);
-		counts_[j]++;
-		c.width = size.cx;
-		//dprintf(L"vpod: %d, line: %d, width: %d", c.vpos, c.line, c.width);
-		float ratio = (float)size.cx / window_width_;
-		double newvpos;
-		if (ratio < 0.1) {
-			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * (ratio + 0.1);
-		} else if (ratio < 0.2) {
-			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * (ratio + 0.1);
-		} else if (ratio < 0.4) {
-			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * 0.5;
-		} else if (ratio < 0.6) {
-			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * 0.7;
-		} else {
-			newvpos = c.vpos + static_cast<double>(VPOS_LEN) * 0.9;
-		}
-		lines_[j] = static_cast<int>(newvpos);
+		lines_[j] = Chat(c);
 	}
 
 	void Clear() {
 		chat_.clear();
 		linecount_ = -1;
-		delete [] lines_;
-		delete [] counts_;
-		delete [] linesShita_;
-		delete [] linesUe_;
-		lines_ = NULL;
-		counts_ = NULL;
-		linesShita_ = NULL;
-		linesUe_ = NULL;
+		lines_.clear();
+		linesShita_.clear();
+		linesUe_.clear();
 		ClearObjects();
 	}
 
@@ -371,10 +366,6 @@ public:
 			yPitch = rc.bottom / (newLineCount + 1);
 		}
 
-		if (linecount_ == newLineCount) {
-			return;
-		}
-
 		ClearObjects();
 		hWnd_ = hWnd;
 		hDC_ = GetDC(hWnd);
@@ -382,27 +373,14 @@ public:
 		iYPitch_ = yPitch;
 		HGDIOBJ hOld = SelectObject(hDC_, hFont_);
 
-		delete [] lines_;
-		delete [] counts_;
-		delete [] linesShita_;
-		delete [] linesUe_;
-
 		linecount_ = newLineCount;
-		lines_ = new int[newLineCount];
-		counts_ = new int[newLineCount];
-		linesShita_ = new int[newLineCount];
-		linesUe_ = new int[newLineCount];
-		memset(lines_, 0, sizeof(int) * newLineCount);
-		memset(counts_, 0, sizeof(int) * newLineCount);
-		memset(linesShita_, 0, sizeof(int) * newLineCount);
-		memset(linesUe_, 0, sizeof(int) * newLineCount);
+		lines_.assign(newLineCount, Chat());
+		linesShita_.assign(newLineCount, Chat());
+		linesUe_.assign(newLineCount, Chat());
 
 		std::list<Chat>::iterator i;
 		for (i=chat_.begin(); i!=chat_.end(); ++i) {
 			UpdateChat(*i);
-		}
-		for (int i=0; i<newLineCount; i++) {
-			dprintf(L"line[%d] = %d", i, counts_[i]);
 		}
 	}
 
@@ -540,12 +518,12 @@ void Cjk::ResizeToVideoWindow() {
 		GetWindowRect(GetFullscreenWindow(), &rc);
 		SetWindowPos(
 			hWnd_,
-			HWND_TOPMOST,
+			NULL,
 			rc.left,
 			rc.top,
 			rc.right - rc.left,
 			rc.bottom - rc.top,
-			SWP_NOACTIVATE);
+			SWP_NOZORDER | SWP_NOACTIVATE);
 	} else {
 		GetWindowRect(m_pApp->GetAppWindow(), &rc);
 		SetWindowPos(
@@ -641,14 +619,14 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 		return;
 	}
 	if (memDC_) {
-		SetBkMode(memDC_, TRANSPARENT);
-		RECT rc = {0, 0, 1920, 1080};
-		HBRUSH transBrush = CreateSolidBrush(COLOR_TRANSPARENT);
-		FillRect(memDC_, &rc, transBrush);
-		DeleteObject(transBrush);
-
 		RECT rcWnd;
 		GetClientRect(hWnd, &rcWnd);
+
+		SetBkMode(memDC_, TRANSPARENT);
+		HBRUSH transBrush = CreateSolidBrush(COLOR_TRANSPARENT);
+		FillRect(memDC_, &rcWnd, transBrush);
+		DeleteObject(transBrush);
+
 		int width = rcWnd.right;
 		int yPitch = manager.GetYPitch();
 
@@ -690,7 +668,7 @@ void Cjk::DrawComments(HWND hWnd, HDC hDC) {
 		}
 		SelectObject(memDC_, hPrevFont);
 
-		BitBlt(hDC, 0, 0, rcWnd.right - rcWnd.left, rc.bottom - rc.top, memDC_, 0, 0, SRCCOPY);
+		BitBlt(hDC, 0, 0, rcWnd.right - rcWnd.left, rcWnd.bottom - rcWnd.top, memDC_, 0, 0, SRCCOPY);
 	}
 }
 
@@ -727,7 +705,6 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		break;
 	case WM_CLOSE:
 		KillTimer(hWnd, jkTimerID);
-		PostMessage(GetParent(hWnd), WM_CLOSE, 0, 0);
 		DestroyWindow(hWnd);
 		break;
 	case WM_LBUTTONDOWN:
@@ -771,14 +748,10 @@ LRESULT CALLBACK Cjk::SocketProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		pThis = (Cjk*)((CREATESTRUCT*)lp)->lpCreateParams;
 		pThis->socGetflv_ = INVALID_SOCKET;
 		pThis->socComment_ = INVALID_SOCKET;
-		manager.SetNotifyWindow(hWnd);
+		manager.SetNotifyWindow(pThis->hForce_);
 		break;
 	case WM_CLOSE:
-		PostMessage(GetParent(hWnd), WM_CLOSE, 0, 0);
 		DestroyWindow(hWnd);
-		break;
-	case WM_NEWCOMMENT:
-		SendMessage(pThis->hForce_, WM_NEWCOMMENT, 0L, lp);
 		break;
 	case WMS_JKHOST_EVENT:
 		if (WSAGETASYNCERROR(lp) == 0) {
@@ -913,10 +886,6 @@ BOOL Cjk::WindowMsgCallback(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam,LRES
 	}
 
     switch (uMsg) {
-	case WM_ACTIVATE:
-		if (WA_INACTIVE == LOWORD(wParam)) {
-			return FALSE;
-		}
 	case WM_MOVE:
     case WM_SIZE:
 		ResizeToVideoWindow();
