@@ -463,7 +463,12 @@ BOOL CNicoJK::ForceDialog_OnSelChange(HWND hList) {
 						int chJK = GetJKByChannelName(info.szChannelName);
 						// 実況IDが一致するチャンネルに切替
 						if (jkID == chJK) {
-							m_pApp->SetChannel(m_pApp->GetTuningSpace(), i);
+							// すでに表示中なら切り替えない
+							TVTest::ChannelInfo currentInfo;
+							bool success = m_pApp->GetCurrentChannelInfo(&currentInfo);
+							if (!success || currentInfo.Channel != info.Channel) {
+								m_pApp->SetChannel(m_pApp->GetTuningSpace(), i);
+							}
 							return TRUE;
 						}
 					}
