@@ -34,6 +34,12 @@ NicoJK.iniで、
 ＡＡは勝手に解体されます。
 切断時や４時の実況切り替わり時の再接続は未実装。
 
+■DirectWriteについて
+Windows Vista以降かつ、DirectX 10.1以降対応のグラボがある環境でのみ
+自動的に使用します。
+無効にするには disableDWrite=1 としてください。
+有効になっていると、文字が縁取って表示されます。
+
 ■テスト環境
 Win7 sp1 + PT2 + ptTimer + BonDriver_ptmr.dll + TVTest 0.7.19(x86)
 
@@ -45,6 +51,10 @@ https://github.com/rutice/NicoJK/downloads
 https://github.com/rutice/NicoJK
 
 ■更新履歴
+rev.12
+DirectWriteが使える環境では使ってみた
+新ＢＳチャンネルを追加した
+
 rev.11
 コメントの表示タイミングを改善した（行が溢れない限り重ならなくなった）
 shitaコメントの表示が切れてたのを修正した
