@@ -27,10 +27,10 @@
     <ClInclude Include="NicoJK.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="TVTestPlugin.h">
+    <ClInclude Include="CommentWindow.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="CommentWindow.h">
+    <ClInclude Include="TVTestPlugin.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>

@@ -14,9 +14,46 @@
 #define jkTimerID 1021
 #define IDB_START 1
 
+const int VPOS_LEN = 400;
 #define COLOR_TRANSPARENT RGB(12, 12, 12)
 
 #define WM_NEWCOMMENT (WM_APP+200)
+
+enum CHAT_POSITION {
+	CHAT_POS_DEFAULT = 0,
+	CHAT_POS_SHITA = 1,
+	CHAT_POS_UE = 2
+};
+
+class Chat {
+public:
+	int vpos; // 表示開始vpos
+	std::wstring text;
+	float line; // 上から0, 1... だけど小数点もあるよ
+	int width; // 表示幅（ピクセル）
+	COLORREF color;
+	CHAT_POSITION position;
+	Chat()
+		: vpos(-1000),
+		  text(L""),
+		  line(0),
+		  width(0),
+		  color(0),
+		  position(CHAT_POS_DEFAULT)
+	{ }
+	Chat(int vpos_in, std::wstring text_in)
+		: vpos(vpos_in),
+		  text(text_in),
+		  line(0),
+		  width(200),
+		  color(RGB(255, 255, 255)),
+		  position(CHAT_POS_DEFAULT)
+	{ }
+
+	bool operator<(const Chat& b) {
+		return vpos < b.vpos;
+	}
+};
 
 class Cjk {
 	TVTest::CTVTestApp *m_pApp;
@@ -24,10 +61,6 @@ class Cjk {
 	HWND hWnd_;
 	HWND hSocket_;
 	HWND hForce_;
-	// Draw
-	HDC memDC_;
-	HBITMAP hBitmap_;
-	HBITMAP hPrevBitmap_;
 
 	DWORD msPosition_;
 	DWORD msSystime_;
@@ -44,7 +77,7 @@ class Cjk {
 	static LRESULT CALLBACK SocketProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 public:
-	Cjk(TVTest::CTVTestApp *pApp, HWND hForce);
+	Cjk(TVTest::CTVTestApp *pApp, HWND hForce, bool disableDWrite);
 	void Create(HWND hParent);
 	void Destroy();
 	void DestroySocket();
@@ -56,10 +89,7 @@ public:
 	void SetLiveMode();
 	void Start();
 
-	// Draw
-	void SetupObjects();
-	void ClearObjects();
-	void DrawComments(HWND hWnd, HDC hDC);
+	void DrawComments(HWND hWnd);
 
 	// TVTestのメッセージ
 	BOOL WindowMsgCallback(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam,LRESULT *pResult);

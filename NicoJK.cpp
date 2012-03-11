@@ -73,7 +73,8 @@ bool CNicoJK::Initialize() {
 
 	// 独自実装
 	useSDK_ = 0 != GetPrivateProfileInt(_T("Setting"), _T("useSDK"), 0, szIniFileName_);
-	jkcw_ = new Cjk(m_pApp, hForce_);
+	bool disableDWrite = 0 != GetPrivateProfileInt(_T("Setting"), _T("disableDWrite"), 0, szIniFileName_);
+	jkcw_ = new Cjk(m_pApp, hForce_, disableDWrite);
 
 	// イベントコールバック関数を登録
 	m_pApp->SetEventCallback(EventCallback, this);

@@ -86,14 +86,18 @@
     <None Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CommentPrinter.h" />
     <ClInclude Include="CommentWindow.h" />
+    <ClInclude Include="Direct2DRenderer.h" />
     <ClInclude Include="NicoJK.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="TVTestPlugin.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="CommentPrinter.cpp" />
     <ClCompile Include="CommentWindow.cpp" />
+    <ClCompile Include="Direct2DRenderer.cpp" />
     <ClCompile Include="NicoJK.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

@@ -1,6 +1,7 @@
 
 #include "stdafx.h"
 #include "CommentWindow.h"
+#include "CommentPrinter.h"
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "ws2_32.lib")
 
@@ -24,59 +25,6 @@ inline void dprintf_real( const _TCHAR * fmt, ... )
 #else
 #  define dprintf __noop
 #endif
-
-HFONT CreateFont(int h) {
-	return ::CreateFont(h,    //フォント高さ
-        0,                    //文字幅
-        0,                    //テキストの角度
-        0,                    //ベースラインとｘ軸との角度
-        FW_SEMIBOLD,            //フォントの重さ（太さ）
-        FALSE,                //イタリック体
-        FALSE,                //アンダーライン
-        FALSE,                //打ち消し線
-        SHIFTJIS_CHARSET,    //文字セット
-        OUT_DEFAULT_PRECIS,    //出力精度
-        CLIP_DEFAULT_PRECIS,//クリッピング精度
-        NONANTIALIASED_QUALITY,        //出力品質
-        FIXED_PITCH | FF_MODERN,//ピッチとファミリー
-        TEXT("MS UI Gothic"));    //書体名
-}
-
-enum CHAT_POSITION {
-	CHAT_POS_DEFAULT = 0,
-	CHAT_POS_SHITA = 1,
-	CHAT_POS_UE = 2
-};
-
-class Chat {
-public:
-	int vpos; // 表示開始vpos
-	std::wstring text;
-	float line; // 上から0, 1... だけど小数点もあるよ
-	int width; // 表示幅（ピクセル）
-	COLORREF color;
-	CHAT_POSITION position;
-	Chat()
-		: vpos(-1000),
-		  text(L""),
-		  line(0),
-		  width(0),
-		  color(0),
-		  position(CHAT_POS_DEFAULT)
-	{ }
-	Chat(int vpos_in, std::wstring text_in)
-		: vpos(vpos_in),
-		  text(text_in),
-		  line(0),
-		  width(200),
-		  color(RGB(255, 255, 255)),
-		  position(CHAT_POS_DEFAULT)
-	{ }
-
-	bool operator<(const Chat& b) {
-		return vpos < b.vpos;
-	}
-};
 
 struct COMMAND2COLOR {
 	COLORREF color;
@@ -141,8 +89,6 @@ COLORREF GetColor(const wchar_t *command) {
 	return NO_COLOR;
 }
 
-const int VPOS_LEN = 400;
-
 class ChatManager {
 	struct min_vpos_filter {
 		int minvpos_;
@@ -157,23 +103,13 @@ class ChatManager {
 	std::vector<Chat> linesUe_;
 	int iYPitch_;
 
+	// Printer
+	Printer *printer;
+
 	// GDI
 	RECT oldRect_;
 	HWND hWnd_;
 	HWND hNotify_;
-	HDC hDC_;
-	HFONT hFont_;
-	HGDIOBJ hOld_;
-
-	void ClearObjects() {
-		if (hDC_) {
-			SelectObject(hDC_, hOld_);
-			DeleteObject(hFont_);
-			ReleaseDC(hWnd_, hDC_);
-		}
-		hDC_ = NULL;
-		hWnd_ = NULL;
-	}
 
 	bool xmlGetText(const wchar_t *str, wchar_t *out, int len) {
 		const wchar_t *es = wcschr(str, L'>');
@@ -224,11 +160,15 @@ public:
 	ChatManager() :
 		linecount_(0),
 		iYPitch_(0),
-		hDC_(NULL),
 		hWnd_(NULL),
-		hNotify_(NULL)
+		hNotify_(NULL),
+		printer(NULL)
 	{
 		SetRectEmpty(&oldRect_);
+	}
+
+	void Initialize(bool disableDWrite) {
+		printer = CreatePrinter(disableDWrite);
 	}
 
 	bool insert(wchar_t *str, int vpos) {
@@ -298,8 +238,7 @@ public:
 			// TODO: 上も対応・・・しないかも
 		}
 
-		SIZE size;
-		GetTextExtentPoint32W(hDC_, c.text.c_str(), c.text.length(), &size);
+		SIZE size = printer->GetTextSize(c.text.c_str(), c.text.length());
 		c.width = size.cx;
 
 		int j;
@@ -339,11 +278,10 @@ public:
 		lines_.clear();
 		linesShita_.clear();
 		linesUe_.clear();
-		ClearObjects();
 	}
 
 	void PrepareChats(HWND hWnd) {
-		if (!hWnd) {
+		if (!hWnd || !printer) {
 			return;
 		}
 
@@ -366,12 +304,9 @@ public:
 			yPitch = rc.bottom / (newLineCount + 1);
 		}
 
-		ClearObjects();
+		printer->SetParams(hWnd, yPitch - 2);
 		hWnd_ = hWnd;
-		hDC_ = GetDC(hWnd);
-		hFont_ = CreateFont(yPitch - 2);
 		iYPitch_ = yPitch;
-		HGDIOBJ hOld = SelectObject(hDC_, hFont_);
 
 		linecount_ = newLineCount;
 		lines_.assign(newLineCount, Chat());
@@ -383,9 +318,30 @@ public:
 			UpdateChat(*i);
 		}
 	}
+	
+	void DrawComments(HWND hWnd, int vpos) {
+		RECT rcWnd;
+		GetClientRect(hWnd, &rcWnd);
 
-	HFONT GetFont() {
-		return hFont_;
+		printer->Begin(rcWnd, iYPitch_);
+		
+		std::list<Chat>::const_iterator i = chat_.begin();
+		for (; i!=chat_.cend(); ++i) {
+			// skip head
+			if (i->vpos < vpos - VPOS_LEN) {
+				continue;
+			}
+			// end
+			if (i->vpos > vpos) {
+				break;
+			}
+			if (i->position == CHAT_POS_SHITA) {
+				printer->DrawShita(*i);
+			} else {
+				printer->DrawNormal(*i, vpos);
+			}
+		}
+		printer->End();
 	}
 
 	int GetYPitch() {
@@ -398,13 +354,14 @@ public:
 };
 ChatManager manager;
 
-Cjk::Cjk(TVTest::CTVTestApp *pApp, HWND hForce) :
+Cjk::Cjk(TVTest::CTVTestApp *pApp, HWND hForce, bool disableDWrite) :
 	m_pApp(pApp),
 	hForce_(hForce),
 	hWnd_(NULL),
-	memDC_(NULL),
 	msPosition_(0)
-{ }
+{ 
+	manager.Initialize(disableDWrite);
+}
 
 void Cjk::Create(HWND hParent) {
 	static bool bInitialized = false;
@@ -477,7 +434,6 @@ void Cjk::Create(HWND hParent) {
 }
 
 void Cjk::Destroy() {
-	ClearObjects();
 	DestroyWindow(hWnd_);
 	hWnd_ = NULL;
 }
@@ -535,37 +491,7 @@ void Cjk::ResizeToVideoWindow() {
 			rc.bottom - rc.top - 60,
 			SWP_NOZORDER | SWP_NOACTIVATE);
 	}
-	SetupObjects();
 	manager.PrepareChats(hWnd_);
-}
-
-void Cjk::SetupObjects() {
-	if (memDC_) {
-		ClearObjects();
-	}
-
-	HDC wndDC = GetDC(hWnd_);
-	memDC_ = CreateCompatibleDC(wndDC);
-
-	RECT rc;
-	GetClientRect(hWnd_, &rc);
-	hBitmap_ = CreateCompatibleBitmap(wndDC, rc.right, rc.bottom);
-	if (!hBitmap_) {
-		dprintf(L"CreateCompatibleBitmap failed");
-	}
-	hPrevBitmap_ = (HBITMAP)SelectObject(memDC_, hBitmap_);
-	
-	ReleaseDC(hWnd_, wndDC);
-}
-
-void Cjk::ClearObjects() {
-	if (memDC_ == NULL) {
-		return ;
-	}
-	SelectObject(memDC_, hPrevBitmap_);
-	DeleteObject(hBitmap_);
-	DeleteDC(memDC_);
-	memDC_ = NULL;
 }
 
 // tokenは ms= のように = もつける。
@@ -614,62 +540,13 @@ void Cjk::SetPosition(int posms) {
 	msPosition_ = posms;
 }
 
-void Cjk::DrawComments(HWND hWnd, HDC hDC) {
+void Cjk::DrawComments(HWND hWnd) {
 	if (!msPositionBase_) {
 		return;
 	}
-	if (memDC_) {
-		RECT rcWnd;
-		GetClientRect(hWnd, &rcWnd);
 
-		SetBkMode(memDC_, TRANSPARENT);
-		HBRUSH transBrush = CreateSolidBrush(COLOR_TRANSPARENT);
-		FillRect(memDC_, &rcWnd, transBrush);
-		DeleteObject(transBrush);
-
-		int width = rcWnd.right;
-		int yPitch = manager.GetYPitch();
-
-		int basevpos = (msPosition_ - msPositionBase_ + (timeGetTime() - msSystime_)) / 10;
-		SetBkMode(memDC_, TRANSPARENT);
-		HGDIOBJ hPrevFont = SelectObject(memDC_, manager.GetFont());
-		
-		std::list<Chat>::const_iterator i = manager.chat_.begin();
-		for (; i!=manager.chat_.cend(); ++i) {
-			// skip head
-			if (i->vpos < basevpos - VPOS_LEN) {
-				continue;
-			}
-			// end
-			if (i->vpos > basevpos) {
-				break;
-			}
-			if (i->position == CHAT_POS_SHITA) {
-				RECT rc;
-				rc.top = rcWnd.bottom - yPitch - static_cast<LONG>(i->line * yPitch);
-				rc.bottom = rc.top + yPitch;
-				rc.left = 0;
-				rc.right = rcWnd.right;
-				const std::wstring &text = i->text;
-				SetTextColor(memDC_, RGB(0, 0, 0));
-				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER | DT_NOPREFIX);
-				OffsetRect(&rc, -2, -2);
-				SetTextColor(memDC_, i->color);
-				DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER | DT_NOPREFIX);				
-			} else {
-				int x = static_cast<int>(width - (float)(i->width + width) * (basevpos - i->vpos) / VPOS_LEN);
-				int y = static_cast<int>(10 + yPitch * i->line);
-				const std::wstring &text = i->text;
-				SetTextColor(memDC_, RGB(0, 0, 0));
-				TextOutW(memDC_, x+2, y+2, text.c_str(), text.length());
-				SetTextColor(memDC_, i->color);
-				TextOutW(memDC_, x, y, text.c_str(), text.length());
-			}
-		}
-		SelectObject(memDC_, hPrevFont);
-
-		BitBlt(hDC, 0, 0, rcWnd.right - rcWnd.left, rcWnd.bottom - rcWnd.top, memDC_, 0, 0, SRCCOPY);
-	}
+	int vpos = (msPosition_ - msPositionBase_ + (timeGetTime() - msSystime_)) / 10;
+	manager.DrawComments(hWnd, vpos);
 }
 
 LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -680,7 +557,6 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
 	switch (msg) {
 	case WM_CREATE:
-		SetLayeredWindowAttributes(hWnd, COLOR_TRANSPARENT, 0, LWA_COLORKEY);
 		pThis = (Cjk*)((CREATESTRUCT*)lp)->lpCreateParams;
 		SetTimer(hWnd, jkTimerID, 33, NULL);
 		break;
@@ -696,12 +572,13 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		break;
 	case WM_PAINT:
 		hdc = BeginPaint(hWnd, &ps);
-		pThis->DrawComments(hWnd, hdc);
+		pThis->DrawComments(hWnd);
 		EndPaint(hWnd, &ps);
 		break;
 	case WM_TIMER:
-		InvalidateRect(hWnd, NULL, FALSE);
-		UpdateWindow(hWnd);
+		pThis->DrawComments(hWnd);
+		//InvalidateRect(hWnd, NULL, FALSE);
+		//UpdateWindow(hWnd);
 		break;
 	case WM_CLOSE:
 		KillTimer(hWnd, jkTimerID);
