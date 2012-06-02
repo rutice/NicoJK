@@ -35,9 +35,8 @@ NicoJK.iniで、
 切断時や４時の実況切り替わり時の再接続は未実装。
 
 ■DirectWriteについて
-Windows Vista以降かつ、DirectX 10.1以降対応のグラボがある環境でのみ
-自動的に使用します。
-無効にするには disableDWrite=1 としてください。
+Windows Vista以降かつ、DirectX 10.1以降対応のグラボがある環境で使用できます。
+有効にするには disableDWrite=0 としてください。
 有効になっていると、文字が縁取って表示されます。
 
 ■テスト環境
@@ -51,6 +50,14 @@ https://github.com/rutice/NicoJK/downloads
 https://github.com/rutice/NicoJK
 
 ■更新履歴
+rev.13
+コメント設定をini設定可能にする変更をマージ
+勢い一覧を取得するAPIを変更。ＢＳも表示するようにした。
+DirectWriteをデフォルトでは使用しないようにした（iniで設定可）
+勢いウィンドウを表示しない設定を追加（hideForceWindow）。
+勢いウィンドウから同チャンネルの別サービスに切り替えできなかったのを修正。
+大きなディスプレイの場合にコメントが切れる／表示できないのを修正（したはず）。
+
 rev.12
 DirectWriteが使える環境では使ってみた
 新ＢＳチャンネルを追加した

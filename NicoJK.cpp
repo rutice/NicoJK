@@ -104,8 +104,11 @@ bool CNicoJK::Finalize() {
 void CNicoJK::TogglePlugin(bool bEnabled) {
 	if (bEnabled) {
 		OnChannelChange();
-		PostMessage(hForce_, WM_TIMER, TIMER_UPDATE, 0L);
-		ShowWindow(hForce_, SW_SHOW);
+		int hideForceWindow = GetPrivateProfileInt(_T("Setting"), _T("hideForceWindow"), 0, szIniFileName_);
+		if (!hideForceWindow) {
+			ShowWindow(hForce_, SW_SHOW);
+			PostMessage(hForce_, WM_TIMER, TIMER_UPDATE, 0L);
+		}
 	} else {
 		ShowWindow(hForce_, SW_HIDE);
 		StopJK();
@@ -368,7 +371,7 @@ BOOL CNicoJK::ForceDialog_UpdateForce() {
 			closesocket(socJkapi_);
 		}
 		if (!hGethost_) {
-			hGethost_ = WSAAsyncGetHostByName(hForce_, WMS_APIJK_HOST, "api.jk.nicovideo.jp", szHostbuf_, MAXGETHOSTSTRUCT);
+			hGethost_ = WSAAsyncGetHostByName(hForce_, WMS_APIJK_HOST, "jk.nicovideo.jp", szHostbuf_, MAXGETHOSTSTRUCT);
 		}
 		return TRUE;
 	}
@@ -422,16 +425,30 @@ const wchar_t *CNicoJK::GetXmlInnerElement(const wchar_t *in, const wchar_t *sta
 BOOL CNicoJK::ForceDialog_UpdateForceXML() {
 	wchar_t wcs[102400];
 	wchar_t channelElem[1024];
-	MultiByteToWideChar(CP_UTF8, 0, szChannelBuf_, -1, wcs, 10240);
-	const wchar_t *p = wcs;
+	MultiByteToWideChar(CP_UTF8, 0, szChannelBuf_, -1, wcs, 102400);
 
 	TVTest::ChannelInfo info;
 	m_pApp->GetCurrentChannelInfo(&info);
 	int currentJK = GetJKByChannelName(info.szChannelName);
 	
 	HWND hList = GetDlgItem(hForce_, IDC_FORCELIST);
+	int iTopItemIndex = ListBox_GetTopIndex(hList);
 	ListBox_ResetContent(hList);
-	while(p = GetXmlInnerElement(p, L"<channel>", L"</channel>", channelElem, 1024)) {
+	int iSelectedItem = -1;
+	const wchar_t *ptr = wcs;
+	const wchar_t *tmpt = ptr, *tmpbs;
+	while(true) {
+		if (tmpt) {
+			tmpt = GetXmlInnerElement(ptr, L"<channel>", L"</channel>", channelElem, 1024);
+		}
+		if (!tmpt) {
+			tmpbs = GetXmlInnerElement(ptr, L"<bs_channel>", L"</bs_channel>", channelElem, 1024);
+		}
+		ptr = tmpt ? tmpt : tmpbs;
+		if (!ptr) {
+			break;
+		}
+
 		wchar_t szJK[100];
 		GetXmlInnerElement(channelElem, L"<video>", L"</video>", szJK, 100);
 		wchar_t szName[100];
@@ -444,8 +461,12 @@ BOOL CNicoJK::ForceDialog_UpdateForceXML() {
 		ListBox_AddString(hList, szResult);
 
 		if (currentJK == _wtoi(szJK + 2)) {
-			ListBox_SetCurSel(hList, ListBox_GetCount(hList) - 1);
+			iSelectedItem = ListBox_GetCount(hList) - 1;
+			ListBox_SetCurSel(hList, iSelectedItem);
 		}
+	}
+	if (iTopItemIndex >= 0) {
+		ListBox_SetTopIndex(hList, iTopItemIndex);
 	}
 	return TRUE;
 }
@@ -460,18 +481,17 @@ BOOL CNicoJK::ForceDialog_OnSelChange(HWND hList) {
 			if (_tcsncmp(sz, _T("jk"), 2) == 0) {
 				int jkID = _ttoi(sz + 2);
 				
+				int iCurrentTuning = m_pApp->GetTuningSpace();
 				TVTest::ChannelInfo info;
 				// なんとなく200まで
 				for (int i=0; i<200; i++) {
-					if (m_pApp->GetChannelInfo(m_pApp->GetTuningSpace(), i, &info)) {
+					if (m_pApp->GetChannelInfo(iCurrentTuning, i, &info)) {
 						int chJK = GetJKByChannelName(info.szChannelName);
 						// 実況IDが一致するチャンネルに切替
 						if (jkID == chJK) {
 							// すでに表示中なら切り替えない
-							TVTest::ChannelInfo currentInfo;
-							bool success = m_pApp->GetCurrentChannelInfo(&currentInfo);
-							if (!success || currentInfo.Channel != info.Channel) {
-								m_pApp->SetChannel(m_pApp->GetTuningSpace(), i);
+							if (m_pApp->GetService() != info.ServiceID) {
+								m_pApp->SetChannel(m_pApp->GetTuningSpace(), i, info.ServiceID);
 							}
 							return TRUE;
 						}
@@ -560,7 +580,7 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 			memset(pThis->serversockaddr_.sin_zero, 0, sizeof(pThis->serversockaddr_.sin_zero));
 			if (connect(pThis->socJkapi_, (struct sockaddr*)&pThis->serversockaddr_, sizeof(pThis->serversockaddr_)) == SOCKET_ERROR) {
 				if (WSAGetLastError() != WSAEWOULDBLOCK) {
-					MessageBox(hwnd, _T("ニコニコ実況APIサーバへの接続に失敗しました。"), _T("Error"), MB_OK | MB_ICONERROR);
+					MessageBox(hwnd, _T("ニコニコ実況サーバへの接続に失敗しました。"), _T("Error"), MB_OK | MB_ICONERROR);
 				}
 			}
 		}
@@ -570,7 +590,7 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 	case WMS_APIJK:
 		{
 			SOCKET soc = (SOCKET)wparam;
-			char *szGetTemplate = "GET /v1/channel.list HTTP/1.0\r\nHost: api.jk.nicovideo.jp\r\nConnection: Close\r\n\r\n";
+			char *szGetTemplate = "GET /api/v2_app/getchannels HTTP/1.0\r\nHost: jk.nicovideo.jp\r\nConnection: Close\r\n\r\n";
 			switch(WSAGETSELECTEVENT(lparam)) {
 			case FD_CONNECT:		/* サーバ接続したイベントの場合 */
 				break;
@@ -588,7 +608,7 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 				}
 				break;
 			case FD_CLOSE:
-				if (strlen(buf)) {
+				if (strlen(pThis->szChannelBuf_)) {
 					pThis->ForceDialog_UpdateForceXML();
 				}
 				closesocket(soc);
@@ -615,8 +635,10 @@ INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd,UINT uMsg,WPARAM wparam,LPAR
 		break;
 	case WM_TIMER:
 		if (pThis) {
-			// 勢いを更新する
-			return pThis->ForceDialog_UpdateForce();
+			if (IsWindowVisible(hwnd)) {
+				// 勢いを更新する
+				return pThis->ForceDialog_UpdateForce();
+			}
 		}
 		break;
 	case WM_SIZE:

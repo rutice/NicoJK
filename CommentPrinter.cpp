@@ -9,6 +9,7 @@
 //#include <wincodec.h>
 //#include <wincodecsdk.h>
 #include <comip.h>
+#include <comdef.h>
 
 #include "CommentPrinter.h"
 #include "CommentWindow.h"
@@ -48,9 +49,12 @@ public:
 	  hWnd_(NULL),
 		  hDC_(NULL)
 	  {
+		  RECT rc;
+		  GetWindowRect(GetDesktopWindow(), &rc);
+
 		  HDC wndDC = GetDC(hWnd_);
 		  memDC_ = CreateCompatibleDC(wndDC);
-		  hBitmap_ = CreateCompatibleBitmap(wndDC, 1920, 1200);
+		  hBitmap_ = CreateCompatibleBitmap(wndDC, rc.right - rc.left, rc.bottom - rc.top);
 		  hPrevBitmap_ = (HBITMAP)SelectObject(memDC_, hBitmap_);
 
 		  ReleaseDC(hWnd_, wndDC);
@@ -298,7 +302,11 @@ public:
 
 	static bool IsAvailable() {
 		if (isAvailable == -1) {
-			isAvailable = IsAvailableImpl() ? 1 : 0;
+			try {
+				isAvailable = IsAvailableImpl() ? 1 : 0;
+			} catch (_com_error)  {
+				isAvailable = 0;
+			}
 		}
 		return isAvailable != 0;
 	}
@@ -429,14 +437,17 @@ public:
 			COMPTR_TYPEDEF(ID3D10Texture2D);
 			ID3D10Texture2DPtr texture;
 			if (SUCCEEDED(hr)) {
+				RECT rc;
+				GetWindowRect(GetDesktopWindow(), &rc);
+
 				D3D10_TEXTURE2D_DESC description = {};
 				description.ArraySize = 1;
 				description.BindFlags = 
 					D3D10_BIND_RENDER_TARGET;
 				description.Format = 
 					DXGI_FORMAT_B8G8R8A8_UNORM;
-				description.Width = 1920;
-				description.Height = 1200;
+				description.Width = rc.right - rc.left;
+				description.Height = rc.bottom - rc.top;
 				description.MipLevels = 1;
 				description.SampleDesc.Count = 1;
 				description.MiscFlags = 
