@@ -9,6 +9,7 @@
 #include "NicoJK.h"
 #include "resource.h"
 #include "CommentWindow.h"
+#include "NicoJKSettings.h"
 
 #ifdef _DEBUG
 #include <stdarg.h>
@@ -55,6 +56,8 @@ bool CNicoJK::Initialize() {
 	if (GetPrivateProfileInt(_T("Setting"), _T("useSDKAttach"), 0, szIniFileName_)) {
 		cwMode_ = 0;
 	}
+
+	CNJIni::LoadFromIni(szIniFileName_);
 
 	INITCOMMONCONTROLSEX ic;
 	ic.dwSize = sizeof(INITCOMMONCONTROLSEX);
@@ -425,7 +428,7 @@ BOOL CNicoJK::ForceDialog_UpdateForceXML() {
 	TVTest::ChannelInfo info;
 	m_pApp->GetCurrentChannelInfo(&info);
 	int currentJK = GetJKByChannelName(info.szChannelName);
-
+	
 	HWND hList = GetDlgItem(hForce_, IDC_FORCELIST);
 	ListBox_ResetContent(hList);
 	while(p = GetXmlInnerElement(p, L"<channel>", L"</channel>", channelElem, 1024)) {

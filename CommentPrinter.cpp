@@ -13,6 +13,7 @@
 #include "CommentPrinter.h"
 #include "CommentWindow.h"
 #include "Direct2DRenderer.h"
+#include "NicoJKSettings.h"
 
 //#pragma comment(lib, "WindowsCodecs.lib")
 
@@ -21,7 +22,7 @@ HFONT CreateFont(int h) {
 		0,                    //文字幅
 		0,                    //テキストの角度
 		0,                    //ベースラインとｘ軸との角度
-		FW_SEMIBOLD,            //フォントの重さ（太さ）
+		CNJIni::GetSettings()->commentFontBold ? FW_BOLD : FW_NORMAL,            //フォントの重さ（太さ）
 		FALSE,                //イタリック体
 		FALSE,                //アンダーライン
 		FALSE,                //打ち消し線
@@ -30,7 +31,7 @@ HFONT CreateFont(int h) {
 		CLIP_DEFAULT_PRECIS,//クリッピング精度
 		NONANTIALIASED_QUALITY,        //出力品質
 		FIXED_PITCH | FF_MODERN,//ピッチとファミリー
-		TEXT("MS UI Gothic"));    //書体名
+		CNJIni::GetSettings()->commentFontName.c_str());    //書体名
 }
 
 class GDIPrinter : public Printer {
@@ -49,7 +50,7 @@ public:
 	  {
 		  HDC wndDC = GetDC(hWnd_);
 		  memDC_ = CreateCompatibleDC(wndDC);
-		  hBitmap_ = CreateCompatibleBitmap(wndDC, 1920, 1080);
+		  hBitmap_ = CreateCompatibleBitmap(wndDC, 1920, 1200);
 		  hPrevBitmap_ = (HBITMAP)SelectObject(memDC_, hBitmap_);
 
 		  ReleaseDC(hWnd_, wndDC);
@@ -115,24 +116,30 @@ public:
 
 	  void DrawShita(const Chat &chat) {
 		  RECT rc;
-		  rc.top = rcWnd_.bottom - yPitch_ - static_cast<LONG>(chat.line * yPitch_);
+		  rc.top = rcWnd_.bottom - yPitch_ - static_cast<LONG>(chat.line * (int)((float)yPitch_ * CNJIni::GetSettings()->commentLineMargin));
 		  rc.bottom = rc.top + yPitch_;
 		  rc.left = 0;
 		  rc.right = rcWnd_.right;
+		  int shadow = (yPitch_ / 16);
+		  if ( yPitch_ > 24 && shadow == 1 ) { shadow = 2; }
+		  if ( shadow < 1 ) { shadow = 1; }
 		  const std::wstring &text = chat.text;
 		  SetTextColor(memDC_, RGB(0, 0, 0));
 		  DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER | DT_NOPREFIX);
-		  OffsetRect(&rc, -2, -2);
+		  OffsetRect(&rc, -shadow, -shadow);
 		  SetTextColor(memDC_, chat.color);
 		  DrawTextW(memDC_, text.c_str(), text.length(), &rc, DT_CENTER | DT_NOPREFIX);
 	  }
 
 	  void DrawNormal(const Chat &chat, int vpos) {
 		  int x = static_cast<int>(rcWnd_.right - (float)(chat.width + rcWnd_.right) * (vpos - chat.vpos) / VPOS_LEN);
-		  int y = static_cast<int>(10 + yPitch_ * chat.line);
+		  int y = static_cast<int>(((float)yPitch_ * CNJIni::GetSettings()->commentLineMargin) * (float)chat.line);
+		  int shadow = (yPitch_ / 16);
+		  if ( yPitch_ > 24 && shadow == 1 ) { shadow = 2; }
+		  if ( shadow < 1 ) { shadow = 1; }
 		  const std::wstring &text = chat.text;
 		  SetTextColor(memDC_, RGB(0, 0, 0));
-		  TextOutW(memDC_, x+2, y+2, text.c_str(), text.length());
+		  TextOutW(memDC_, x+shadow, y+shadow, text.c_str(), text.length());
 		  SetTextColor(memDC_, chat.color);
 		  TextOutW(memDC_, x, y, text.c_str(), text.length());
 	  }
@@ -298,7 +305,7 @@ public:
 
 	DWPrinter() :
 	hWnd_(NULL),
-		iFontSize_(10),
+		iFontSize_(12),
 		hFont_(NULL) {
 
 			if (!IsAvailable()) {
@@ -359,9 +366,9 @@ public:
 
 		if (SUCCEEDED(hr)) {
 			hr = pDWriteFactory_->CreateTextFormat(
-				L"MS UI Gothic",
+				CNJIni::GetSettings()->commentFontName.c_str(),
 				NULL,
-				DWRITE_FONT_WEIGHT_MEDIUM,
+				CNJIni::GetSettings()->commentFontBold ? DWRITE_FONT_WEIGHT_BOLD : DWRITE_FONT_WEIGHT_NORMAL,
 				DWRITE_FONT_STYLE_NORMAL,
 				DWRITE_FONT_STRETCH_NORMAL,
 				static_cast<FLOAT>(iFontSize_),
@@ -415,7 +422,7 @@ public:
 			  D3D10_DRIVER_TYPE_HARDWARE,
 			  0, // reserved
 			  D3D10_CREATE_DEVICE_BGRA_SUPPORT,
-			  D3D10_FEATURE_LEVEL_10_1,
+			  D3D10_FEATURE_LEVEL_10_0,
 			  D3D10_1_SDK_VERSION,
 			  &device);
 
@@ -429,7 +436,7 @@ public:
 				description.Format = 
 					DXGI_FORMAT_B8G8R8A8_UNORM;
 				description.Width = 1920;
-				description.Height = 1080;
+				description.Height = 1200;
 				description.MipLevels = 1;
 				description.SampleDesc.Count = 1;
 				description.MiscFlags = 
@@ -543,7 +550,7 @@ public:
 
 	void DrawShita(const Chat &chat) {
 		RECT rc;
-		rc.top = rcWnd_.bottom - yPitch_ - static_cast<LONG>(chat.line * yPitch_);
+		rc.top = rcWnd_.bottom - yPitch_ - static_cast<LONG>(chat.line * (int)((float)yPitch_ * CNJIni::GetSettings()->commentLineMargin));
 		rc.bottom = rc.top + yPitch_;
 		rc.left = 0;
 		rc.right = rcWnd_.right;
@@ -580,9 +587,9 @@ public:
 
 	void DrawNormal(const Chat &chat, int vpos) {
 		int x = static_cast<int>(rcWnd_.right - (float)(chat.width + rcWnd_.right) * (vpos - chat.vpos) / VPOS_LEN);
-		int y = static_cast<int>(10 + yPitch_ * chat.line);
+		int y = static_cast<int>(((float)yPitch_ * CNJIni::GetSettings()->commentLineMargin) * (float)chat.line);
 		IDWriteTextLayout *pLayout;
-		pDWriteFactory_->CreateTextLayout(chat.text.c_str(), chat.text.length(), pTextFormat_, 1920, 1080, &pLayout);
+		pDWriteFactory_->CreateTextLayout(chat.text.c_str(), chat.text.length(), pTextFormat_, 1920, 1200, &pLayout);
 
 		D2D1_POINT_2F pt = {static_cast<FLOAT>(x) / dpiScaleX_, static_cast<FLOAT>(y) / dpiScaleY_};
 		ID2D1SolidColorBrush *pColor;

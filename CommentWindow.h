@@ -12,6 +12,7 @@
 #include <functional>
 
 #define jkTimerID 1021
+#define jkTimerResizeID 1022
 #define IDB_START 1
 
 const int VPOS_LEN = 400;
@@ -73,11 +74,15 @@ class Cjk {
 	SOCKET socGetflv_;
 	SOCKET socComment_;
 
+	static bool doResize;
+	static Cjk *pSelf;
+
 	static LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 	static LRESULT CALLBACK SocketProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 public:
 	Cjk(TVTest::CTVTestApp *pApp, HWND hForce, bool disableDWrite);
+	~Cjk();
 	void Create(HWND hParent);
 	void Destroy();
 	void DestroySocket();

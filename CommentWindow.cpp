@@ -2,6 +2,7 @@
 #include "stdafx.h"
 #include "CommentWindow.h"
 #include "CommentPrinter.h"
+#include "NicoJKSettings.h"
 #pragma comment(lib, "winmm.lib")
 #pragma comment(lib, "ws2_32.lib")
 
@@ -30,6 +31,9 @@ struct COMMAND2COLOR {
 	COLORREF color;
 	wchar_t *command;
 };
+
+bool Cjk::doResize = false;
+Cjk *Cjk::pSelf = NULL;
 
 struct COMMAND2COLOR command2color[] = {
 	{RGB(0xFF, 0x00, 0x00), L"red"},
@@ -293,17 +297,28 @@ public:
 		CopyRect(&oldRect_, &rc);
 		
 		window_width_ = rc.right;
+#if		0
 		int yPitch = 30;
 		int newLineCount = max(1, rc.bottom / yPitch - 1);
 		// “K“–‚É’²®
-		if (newLineCount > 15) {
-			newLineCount = 15;
+		if (newLineCount > 12) {
+			newLineCount = 12;
 			yPitch = rc.bottom / (newLineCount + 1);
 		} else if (newLineCount < 8) {
 			newLineCount = 8;
 			yPitch = rc.bottom / (newLineCount + 1);
 		}
-
+#endif
+		int newLineCount = 12;
+		int yPitch = rc.bottom / (newLineCount + 1);
+		yPitch = (int)((float)yPitch * CNJIni::GetSettings()->commentSize);
+		if (yPitch < CNJIni::GetSettings()->commentSizeMin) {
+			yPitch = CNJIni::GetSettings()->commentSizeMin;
+		}
+		if (yPitch > CNJIni::GetSettings()->commentSizeMax) {
+			yPitch = CNJIni::GetSettings()->commentSizeMax;
+		}
+		newLineCount = max(1, rc.bottom / (int)((float)yPitch * CNJIni::GetSettings()->commentLineMargin) - 1);
 		printer->SetParams(hWnd, yPitch - 2);
 		hWnd_ = hWnd;
 		iYPitch_ = yPitch;
@@ -360,7 +375,16 @@ Cjk::Cjk(TVTest::CTVTestApp *pApp, HWND hForce, bool disableDWrite) :
 	hWnd_(NULL),
 	msPosition_(0)
 { 
+	pSelf = this;
 	manager.Initialize(disableDWrite);
+}
+
+Cjk::~Cjk()
+{
+	if ( pSelf == this )
+	{
+		pSelf = NULL;
+	}
 }
 
 void Cjk::Create(HWND hParent) {
@@ -468,9 +492,27 @@ HWND Cjk::GetFullscreenWindow() {
 	return NULL;
 }
 
-void Cjk::ResizeToVideoWindow() {
+BOOL CALLBACK EnumWindowsProc(HWND hwnd , LPARAM lp) {
+	TCHAR strWindowText[1024];
+	GetClassName(hwnd , strWindowText , 1024);
+	if (wcsncmp(strWindowText, _T("TVTest View"), 1024)) return TRUE;
 	RECT rc;
+	GetWindowRect(hwnd, &rc);
+	SetWindowPos(
+		(HWND)lp,
+		NULL,
+		rc.left,
+		rc.top,
+		rc.right - rc.left,
+		rc.bottom - rc.top,
+		SWP_NOZORDER | SWP_NOACTIVATE);
+
+	return FALSE;
+}
+
+void Cjk::ResizeToVideoWindow() {
 	if (m_pApp->GetFullscreen()) {
+		RECT rc;
 		GetWindowRect(GetFullscreenWindow(), &rc);
 		SetWindowPos(
 			hWnd_,
@@ -481,15 +523,18 @@ void Cjk::ResizeToVideoWindow() {
 			rc.bottom - rc.top,
 			SWP_NOZORDER | SWP_NOACTIVATE);
 	} else {
+#if		0
 		GetWindowRect(m_pApp->GetAppWindow(), &rc);
 		SetWindowPos(
 			hWnd_,
 			NULL,
 			rc.left + 10,
-			rc.top + 30,
+			rc.top + 10,
 			rc.right - rc.left - 20,
 			rc.bottom - rc.top - 60,
 			SWP_NOZORDER | SWP_NOACTIVATE);
+#endif
+		EnumChildWindows(m_pApp->GetAppWindow(), EnumWindowsProc, (LPARAM)hWnd_);
 	}
 	manager.PrepareChats(hWnd_);
 }
@@ -558,7 +603,7 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 	switch (msg) {
 	case WM_CREATE:
 		pThis = (Cjk*)((CREATESTRUCT*)lp)->lpCreateParams;
-		SetTimer(hWnd, jkTimerID, 33, NULL);
+		SetTimer(hWnd, jkTimerID, CNJIni::GetSettings()->timerInterval, NULL);
 		break;
 	case WM_COMMAND:
 		switch(LOWORD(wp)) {
@@ -576,12 +621,24 @@ LRESULT CALLBACK Cjk::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 		EndPaint(hWnd, &ps);
 		break;
 	case WM_TIMER:
-		pThis->DrawComments(hWnd);
-		//InvalidateRect(hWnd, NULL, FALSE);
-		//UpdateWindow(hWnd);
+		switch ( wp )
+		{
+		case jkTimerID:
+			if ( doResize && pSelf )
+			{
+				pSelf->ResizeToVideoWindow();
+			}
+			doResize = false;
+
+			pThis->DrawComments(hWnd);
+			//InvalidateRect(hWnd, NULL, FALSE);
+			//UpdateWindow(hWnd);
+			break;
+		}
 		break;
 	case WM_CLOSE:
 		KillTimer(hWnd, jkTimerID);
+		KillTimer(hWnd, jkTimerResizeID);
 		DestroyWindow(hWnd);
 		break;
 	case WM_LBUTTONDOWN:
@@ -766,6 +823,7 @@ BOOL Cjk::WindowMsgCallback(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam,LRES
 	case WM_MOVE:
     case WM_SIZE:
 		ResizeToVideoWindow();
+		doResize = true;
 		break;
 	}
 	return FALSE;

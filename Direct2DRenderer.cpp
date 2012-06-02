@@ -24,6 +24,7 @@
 #include <d2d1.h>
 #include <dwrite.h>
 #include "Direct2DRenderer.h"
+#include "NicoJKSettings.h"
 
 /******************************************************************
 *                                                                 *
@@ -149,7 +150,7 @@ IFACEMETHODIMP CustomTextRenderer::DrawGlyphRun(
     pRT_->DrawGeometry(
         pTransformedGeometry,
         pOutlineBrush_,
-		3.0f
+		CNJIni::GetSettings()->commentFontOutline
         );
 
     // Fill in the glyph run

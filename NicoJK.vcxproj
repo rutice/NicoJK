@@ -90,6 +90,7 @@
     <ClInclude Include="CommentWindow.h" />
     <ClInclude Include="Direct2DRenderer.h" />
     <ClInclude Include="NicoJK.h" />
+    <ClInclude Include="NicoJKSettings.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="TVTestPlugin.h" />
@@ -99,6 +100,7 @@
     <ClCompile Include="CommentWindow.cpp" />
     <ClCompile Include="Direct2DRenderer.cpp" />
     <ClCompile Include="NicoJK.cpp" />
+    <ClCompile Include="NicoJKSettings.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
