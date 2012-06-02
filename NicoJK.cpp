@@ -490,8 +490,10 @@ BOOL CNicoJK::ForceDialog_OnSelChange(HWND hList) {
 						// 実況IDが一致するチャンネルに切替
 						if (jkID == chJK) {
 							// すでに表示中なら切り替えない
-							if (m_pApp->GetService() != info.ServiceID) {
-								m_pApp->SetChannel(m_pApp->GetTuningSpace(), i, info.ServiceID);
+							TVTest::ServiceInfo currentService;
+							bool succeeded = m_pApp->GetServiceInfo(m_pApp->GetService(), &currentService);
+							if (!succeeded || currentService.ServiceID != info.ServiceID) {
+								m_pApp->SetChannel(iCurrentTuning, i, info.ServiceID);
 							}
 							return TRUE;
 						}
