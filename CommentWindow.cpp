@@ -236,6 +236,8 @@ void CCommentWindow::Destroy()
 	pTextureBitmap_ = NULL;
 }
 
+// コメントの描画スタイルを設定する
+// 動的変更には対応していないので、これを呼んだらDestroy()&Create()するべき
 void CCommentWindow::SetStyle(LPCTSTR fontName, LPCTSTR fontNameMulti, bool bBold, bool bAntiAlias,
                               int fontOutline, bool bUseOsdCompositor, bool bUseTexture, bool bUseDrawingThread)
 {
@@ -361,6 +363,7 @@ void CCommentWindow::OnParentSize()
 	}
 }
 
+// コメントを1つだけ追加する
 void CCommentWindow::AddChat(LPCTSTR text, COLORREF color, CHAT_POSITION position,
                              CHAT_SIZE size, CHAT_ALIGN align, bool bInsertLast, BYTE backOpacity, int delay)
 {
@@ -417,6 +420,8 @@ void CCommentWindow::ClearChat()
 #define DWORD_MSB(x) ((x) & 0x80000000)
 #define DWORD_DIFF(a,b) (DWORD_MSB((a)-(b)) ? -(int)((b)-(a)) : (int)((a)-(b)))
 
+// ウィンドウのタイムスタンプを前進させる
+// スレッドの描画完了を待つので呼ぶタイミングに注意
 void CCommentWindow::Forward(int duration)
 {
 	WaitForIdleDrawingThread();
@@ -426,6 +431,7 @@ void CCommentWindow::Forward(int duration)
 		std::list<CHAT>::const_iterator it = chatList_.begin();
 		while (it != chatList_.end()) {
 			// 表示期限切れのコメントを追い出す
+			// タイムスタンプの計算は2^32を法とする合同式
 			if (DWORD_MSB(it->pts + displayDuration_ - rts_)) {
 				if (it->position == CHAT_POS_SHITA && it->bDrew) {
 					bForceRefreshDirty_ = true;
@@ -511,6 +517,7 @@ void CCommentWindow::UpdateLayeredWindow()
 
 	if (hDrawingThread_) {
 		// あとはスレッドに任せる
+		// 目的は高速化ではなくメインスレッドの拘束時間を減らすこと
 		ResetEvent(hDrawingIdleEvent_);
 		SetEvent(hDrawingEvent_);
 	} else {
@@ -524,6 +531,7 @@ unsigned int __stdcall CCommentWindow::DrawingThread(void *pParam)
 	CCommentWindow *pThis = static_cast<CCommentWindow*>(pParam);
 	while (WaitForSingleObject(pThis->hDrawingEvent_, INFINITE) == WAIT_OBJECT_0 && !pThis->bQuitDrawingThread_) {
 		pThis->UpdateChat();
+		// これがシグナル状態のとき描画スレッドはメンバ変数にアクセスしてはいけない
 		SetEvent(pThis->hDrawingIdleEvent_);
 	}
 	pThis->bQuitDrawingThread_ = true;
@@ -607,6 +615,8 @@ BOOL CCommentWindow::UpdateLayeredWindow(HWND hWnd, HDC hdcDst, POINT *pptDst, S
 	}
 }
 
+// サーフェイス合成時のコールバック
+// COsdCompositor::UpdateSurface()から呼ばれるので必ずメインスレッド
 BOOL CALLBACK CCommentWindow::UpdateCallback(void *pBits, const RECT *pSurfaceRect, int pitch, void *pClientData)
 {
 	CCommentWindow *pThis = static_cast<CCommentWindow*>(pClientData);
@@ -632,6 +642,11 @@ BOOL CALLBACK CCommentWindow::UpdateCallback(void *pBits, const RECT *pSurfaceRe
 	return FALSE;
 }
 
+// コメントを描画する
+// メインもしくは描画スレッドから呼ばれるのでメンバ変数へのアクセスに注意
+// prcUnused: 描画しなかった(コメントの存在しない)領域を返す。left,rightフィールドは一応格納しているが意味はない
+// prcUnusedWoShita: 同上だが下コメを無視した領域を返す
+// pbHasFirstDrawShita: 初めて描画開始された下コメがあるかどうか返す
 void CCommentWindow::DrawChat(Gdiplus::Graphics &g, int width, int height, RECT *prcUnused, RECT *prcUnusedWoShita, bool *pbHasFirstDrawShita)
 {
 	{
@@ -764,6 +779,7 @@ void CCommentWindow::DrawChat(Gdiplus::Graphics &g, int width, int height, RECT 
 		}
 
 		if (currentWindowWidth_ != width) {
+			// ウィンドウサイズが変わったのでテクスチャの破棄とコメントの描画サイズの再計測をする
 			currentWindowWidth_ = -1;
 			textureList_.clear();
 		}

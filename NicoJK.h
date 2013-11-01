@@ -27,6 +27,7 @@ public:
 	bool Finalize();
 private:
 	struct SETTINGS {
+		// memset()するためフィールドはすべてPOD型でなければならない
 		int hideForceWindow;
 		int timerInterval;
 		int halfSkipThreshold;

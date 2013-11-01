@@ -62,6 +62,9 @@ enum {
 
 bool CNicoJK::RPL_ELEM::AssignFromPattern()
 {
+	// 入力パターンはsedコマンド等の形式をまねたもの
+	// ただし今のところ's/{regex}/{replace}/g'のみ対応(拡張可能)
+	// 先頭文字が大文字の場合はそのパターンが無効状態であることを示す
 	static const std::regex reBrace("[Ss](.)(.+?)\\1(.*?)\\1g");
 	char utf8[_countof(pattern) * 3];
 	int len = WideCharToMultiByte(CP_UTF8, 0, pattern, -1, utf8, _countof(utf8) - 1, NULL, NULL);
@@ -230,6 +233,7 @@ bool CNicoJK::TogglePlugin(bool bEnabled)
 							f.name = p->name;
 						}
 						lstrcpyn(e.name, f.name, _countof(e.name) - 1);
+						// 今後チャンネル移動などあるかもしれないので確実ではないことを示す"?"
 						lstrcat(e.name, TEXT("?"));
 						e.force = 0;
 						std::vector<FORCE_ELEM>::const_iterator it = forceList_.begin();
@@ -271,6 +275,7 @@ bool CNicoJK::TogglePlugin(bool bEnabled)
 					OSVERSIONINFO vi;
 					vi.dwOSVersionInfoSize = sizeof(vi);
 					BOOL bEnabled;
+					// ここで"dwmapi.dll"を遅延読み込みしていることに注意(つまりXPではDwm*()を踏んではいけない)
 					if (GetVersionEx(&vi) && vi.dwMajorVersion >= 6 && SUCCEEDED(DwmIsCompositionEnabled(&bEnabled)) && bEnabled) {
 						bQuitSyncThread_ = false;
 						hSyncThread_ = reinterpret_cast<HANDLE>(_beginthreadex(NULL, 0, SyncThread, this, 0, NULL));
@@ -423,6 +428,7 @@ void CNicoJK::ToggleStreamCallback(bool bSet)
 
 void CNicoJK::LoadFromIni()
 {
+	// iniはセクション単位で読むと非常に速い。起動時は処理が混み合うのでとくに有利
 	TCHAR *pBuf = NewGetPrivateProfileSection(TEXT("Setting"), szIniFileName_);
 	s_.hideForceWindow		= GetBufferedProfileInt(pBuf, TEXT("hideForceWindow"), 0);
 	s_.timerInterval		= GetBufferedProfileInt(pBuf, TEXT("timerInterval"), -5000);
@@ -1017,6 +1023,7 @@ BOOL CALLBACK CNicoJK::WindowMsgCallback(HWND hwnd, UINT uMsg, WPARAM wParam, LP
 		break;
 	case WM_MOVE:
 		pThis->commentWindow_.OnParentMove();
+		// 実際に捉えたいVideo Containerウィンドウの変化はすこし遅れるため
 		SetTimer(pThis->hForce_, TIMER_DONE_MOVE, 500, NULL);
 		break;
 	case WM_SIZE:
@@ -1146,6 +1153,7 @@ bool CNicoJK::ProcessChatTag(const char *tag, bool bShow, int showDelay)
 		if (bAbone) {
 			lstrcpyn(e.text, s_.abone, _countof(e.text));
 			int tail = lstrlen(e.text) - 1;
+			// 末尾の'&'は元コメントに置き換える (TODO: 末尾以外にも対応したほうがいいかも)
 			if (tail >= 0 && e.text[tail] == TEXT('&')) {
 				lstrcpyn(&e.text[tail], text, _countof(e.text) - tail);
 			}
@@ -1464,6 +1472,7 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 						// ユーザーNGの置換パターンをつくる
 						RPL_ELEM e;
 						lstrcpyn(e.section, TEXT("AutoReplace"), _countof(e.section));
+						// 14文字で切っているのは単に表現を短くするため。深い理由はない
 						wsprintf(e.pattern, TEXT("s/^<chat(?=.*? user_id=\"%.14s%s.*>.*<)/<chat abone=\"1\"/g"),
 						         it->marker, lstrlen(it->marker) > 14 ? TEXT("") : TEXT("\""));
 						if (e.AssignFromPattern()) {
@@ -1540,6 +1549,7 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 				AppendHttpHeader(szGet, "Host: ", JK_HOST_NAME, "\r\n");
 				AppendHttpHeader(szGet, "Cookie: ", cookie_, "\r\n");
 				AppendHttpHeader(szGet, "Connection: ", "close", "\r\n\r\n");
+				// 前回の通信が完了していなくてもfalseを返すだけ。気にせず呼ぶ
 				if (channelSocket_.Send(hwnd, WMS_FORCE, JK_HOST_NAME, 80, szGet)) {
 					channelBuf_.clear();
 				}
