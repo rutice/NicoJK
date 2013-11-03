@@ -51,6 +51,7 @@ private:
 		bool bUseOsdCompositor;
 		bool bUseTexture;
 		bool bUseDrawingThread;
+		bool bSetChannel;
 		bool bShowRadio;
 		bool bDoHalfClose;
 		int maxAutoReplace;
@@ -103,6 +104,7 @@ private:
 	HWND GetFullscreenWindow();
 	HWND FindVideoContainer();
 	DWORD GetCurrentNetworkServiceID();
+	bool GetChannelNetworkServiceID(int tuningSpace, int channelIndex, DWORD *pNtsID);
 	bool GetCurrentTot(FILETIME *pft);
 	bool IsMatchDriverName(LPCTSTR drivers);
 	void WriteToLogfile(int jkID, const char *text = NULL);
