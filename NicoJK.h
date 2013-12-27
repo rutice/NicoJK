@@ -29,6 +29,8 @@ private:
 	struct SETTINGS {
 		// memset()するためフィールドはすべてPOD型でなければならない
 		int hideForceWindow;
+		int forceFontSize;
+		TCHAR forceFontName[LF_FACESIZE];
 		int timerInterval;
 		int halfSkipThreshold;
 		int commentLineMargin;
@@ -129,6 +131,7 @@ private:
 
 	// 勢い窓
 	HWND hForce_;
+	HFONT hForceFont_;
 	HHOOK hKeyboardHook_;
 	bool bDisplayLogList_;
 	std::vector<FORCE_ELEM> forceList_;

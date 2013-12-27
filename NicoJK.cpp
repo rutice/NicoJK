@@ -85,6 +85,7 @@ bool CNicoJK::RPL_ELEM::AssignFromPattern()
 CNicoJK::CNicoJK()
 	: bDragAcceptFiles_(false)
 	, hForce_(NULL)
+	, hForceFont_(NULL)
 	, hKeyboardHook_(NULL)
 	, bDisplayLogList_(false)
 	, logListDisplayedSize_(0)
@@ -260,6 +261,15 @@ bool CNicoJK::TogglePlugin(bool bEnabled)
 					}
 				}
 			}
+			// 破棄のタイミングがややこしいので勢い窓のフォントはここで作る
+			LOGFONT lf = {0};
+			HDC hdc = GetDC(NULL);
+			lf.lfHeight = -(s_.forceFontSize * GetDeviceCaps(hdc, LOGPIXELSY) / 72);
+			ReleaseDC(NULL, hdc);
+			lf.lfCharSet = SHIFTJIS_CHARSET;
+			lstrcpy(lf.lfFaceName, s_.forceFontName);
+			hForceFont_ = CreateFontIndirect(&lf);
+
 			// 勢い窓作成
 			hForce_ = CreateDialogParam(g_hinstDLL, MAKEINTRESOURCE(IDD_FORCE), NULL,
 			                            ForceDialogProc, reinterpret_cast<LPARAM>(this));
@@ -312,6 +322,10 @@ bool CNicoJK::TogglePlugin(bool bEnabled)
 			DestroyWindow(hForce_);
 			hForce_ = NULL;
 			SaveToIni();
+		}
+		if (hForceFont_) {
+			DeleteFont(hForceFont_);
+			hForceFont_ = NULL;
 		}
 		return true;
 	}
@@ -431,6 +445,8 @@ void CNicoJK::LoadFromIni()
 	// iniはセクション単位で読むと非常に速い。起動時は処理が混み合うのでとくに有利
 	TCHAR *pBuf = NewGetPrivateProfileSection(TEXT("Setting"), szIniFileName_);
 	s_.hideForceWindow		= GetBufferedProfileInt(pBuf, TEXT("hideForceWindow"), 0);
+	s_.forceFontSize		= GetBufferedProfileInt(pBuf, TEXT("forceFontSize"), 10);
+	GetBufferedProfileString(pBuf, TEXT("forceFontName"), TEXT("Meiryo UI"), s_.forceFontName, _countof(s_.forceFontName));
 	s_.timerInterval		= GetBufferedProfileInt(pBuf, TEXT("timerInterval"), -5000);
 	s_.halfSkipThreshold	= GetBufferedProfileInt(pBuf, TEXT("halfSkipThreshold"), 9999);
 	s_.commentLineMargin	= GetBufferedProfileInt(pBuf, TEXT("commentLineMargin"), 125);
@@ -1361,6 +1377,10 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 			jkSocket_.SetDoHalfClose(s_.bDoHalfClose);
 			postSocket_.SetDoHalfClose(s_.bDoHalfClose);
 
+			if (hForceFont_) {
+				SendDlgItemMessage(hwnd, IDC_FORCELIST, WM_SETFONT, reinterpret_cast<WPARAM>(hForceFont_), 0);
+				SendDlgItemMessage(hwnd, IDC_CB_POST, WM_SETFONT, reinterpret_cast<WPARAM>(hForceFont_), 0);
+			}
 			SendDlgItemMessage(hwnd, bDisplayLogList_ ? IDC_RADIO_LOG : IDC_RADIO_FORCE, BM_SETCHECK, BST_CHECKED, 0);
 			SendDlgItemMessage(hwnd, IDC_CHECK_RELATIVE, BM_SETCHECK, s_.bSetRelative ? BST_CHECKED : BST_UNCHECKED, 0);
 			SendDlgItemMessage(hwnd, IDC_SLIDER_OPACITY, TBM_SETRANGE, TRUE, MAKELPARAM(0, 10));
