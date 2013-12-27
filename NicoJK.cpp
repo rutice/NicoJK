@@ -1334,10 +1334,31 @@ void CNicoJK::ProcessLocalPost(LPCTSTR comm)
 
 INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+	if (uMsg == WM_MEASUREITEM) {
+		// WM_INITDIALOGの前に呼ばれる
+		LPMEASUREITEMSTRUCT lpmis = reinterpret_cast<LPMEASUREITEMSTRUCT>(lParam);
+		if (lpmis->CtlID == IDC_FORCELIST) {
+			CNicoJK *pThis = dynamic_cast<CNicoJK*>(g_pPlugin);
+			if (pThis && pThis->hForceFont_) {
+				HWND hItem = GetDlgItem(hwnd, IDC_FORCELIST);
+				HDC hdc = GetDC(hItem);
+				HFONT hFontOld = SelectFont(hdc, pThis->hForceFont_);
+				TEXTMETRIC tm;
+				GetTextMetrics(hdc, &tm);
+				SelectFont(hdc, hFontOld);
+				ReleaseDC(hItem, hdc);
+				lpmis->itemHeight = tm.tmHeight + 1;
+				SetWindowLongPtr(hwnd, DWLP_MSGRESULT, TRUE);
+				return TRUE;
+			}
+		}
+		return FALSE;
+	}
 	if (uMsg == WM_INITDIALOG) {
 		SetWindowLongPtr(hwnd, DWLP_USER, lParam);
 	}
-	return reinterpret_cast<CNicoJK*>(GetWindowLongPtr(hwnd, DWLP_USER))->ForceDialogProcMain(hwnd, uMsg, wParam, lParam);
+	CNicoJK *pThis = reinterpret_cast<CNicoJK*>(GetWindowLongPtr(hwnd, DWLP_USER));
+	return pThis ? pThis->ForceDialogProcMain(hwnd, uMsg, wParam, lParam) : FALSE;
 }
 
 INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -1460,6 +1481,53 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 				commentWindow_.Destroy();
 			}
 			commentWindow_.SetOpacity(newOpacity);
+		}
+		break;
+	case WM_DRAWITEM:
+		{
+			LPDRAWITEMSTRUCT lpdis = reinterpret_cast<LPDRAWITEMSTRUCT>(lParam);
+			if (lpdis->CtlType == ODT_LISTBOX) {
+				bool bSelected = (lpdis->itemState & ODS_SELECTED) != 0;
+				HBRUSH hbr = CreateSolidBrush(bSelected ? GetSysColor(COLOR_HIGHLIGHT) : GetBkColor(lpdis->hDC));
+				FillRect(lpdis->hDC, &lpdis->rcItem, hbr);
+				DeleteBrush(hbr);
+
+				TCHAR text[1024];
+				if (ListBox_GetTextLen(lpdis->hwndItem, lpdis->itemID) < _countof(text)) {
+					int textLen = ListBox_GetText(lpdis->hwndItem, lpdis->itemID, text);
+					if (textLen >= 0) {
+						LPCTSTR pText = text;
+						bool bEmphasis = false;
+						if (pText[0] == TEXT('#')) {
+							// 文字列の強調色表示
+							bEmphasis = true;
+							++pText;
+							--textLen;
+						}
+						int oldBkMode = SetBkMode(lpdis->hDC, TRANSPARENT);
+						COLORREF crOld = SetTextColor(lpdis->hDC, bSelected ? GetSysColor(COLOR_HIGHLIGHTTEXT) :
+						                                          bEmphasis ? RGB(0xFF, 0, 0) : GetTextColor(lpdis->hDC));
+						RECT rc = lpdis->rcItem;
+						rc.left += 1;
+						if (pText[0] == TEXT('{')) {
+							// 左側文字列の描画幅指定
+							int fixedLen = StrCSpn(&pText[1], TEXT("}"));
+							if (textLen >= 2 + 2 * fixedLen) {
+								RECT rcCalc = rc;
+								DrawText(lpdis->hDC, &pText[1], fixedLen, &rcCalc, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+								DrawText(lpdis->hDC, &pText[2 + fixedLen], fixedLen, &rcCalc, DT_SINGLELINE | DT_NOPREFIX);
+								rc.left = rcCalc.right;
+								pText += 2 + 2 * fixedLen;
+							}
+						}
+						DrawText(lpdis->hDC, pText, -1, &rc, DT_SINGLELINE | DT_NOPREFIX);
+						SetTextColor(lpdis->hDC, crOld);
+						SetBkMode(lpdis->hDC, oldBkMode);
+					}
+				}
+				SetWindowLongPtr(hwnd, DWLP_MSGRESULT, TRUE);
+				return TRUE;
+			}
 		}
 		break;
 	case WM_COMMAND:
@@ -1797,7 +1865,9 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 				for (size_t i = logList_.size() - logListDisplayedSize_; i > 0; --i, --it);
 				for (; it != logList_.end(); ++it) {
 					TCHAR text[_countof(it->text) + 64];
-					wsprintf(text, TEXT("%02d:%02d:%02d (%.3s) %s"), it->st.wHour, it->st.wMinute, it->st.wSecond, it->marker, it->text);
+					wsprintf(text, TEXT("%s{00:00:00 (MMM)}%02d:%02d:%02d (%.3s)%s%s"),
+					         it->marker[0] == TEXT('#') ? TEXT("#") : TEXT(""), it->st.wHour, it->st.wMinute, it->st.wSecond,
+					         it->marker, TEXT("   ") + min(lstrlen(it->marker), 3), it->text);
 					ListBox_AddString(hList, text);
 					++logListDisplayedSize_;
 				}
