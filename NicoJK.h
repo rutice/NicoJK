@@ -137,6 +137,8 @@ private:
 	std::vector<FORCE_ELEM> forceList_;
 	std::list<LOG_ELEM> logList_;
 	size_t logListDisplayedSize_;
+	TCHAR lastCalcText_[64];
+	int lastCalcWidth_;
 
 	// コメント描画ウィンドウ
 	CCommentWindow commentWindow_;

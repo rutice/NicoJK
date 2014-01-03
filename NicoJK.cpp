@@ -89,6 +89,7 @@ CNicoJK::CNicoJK()
 	, hKeyboardHook_(NULL)
 	, bDisplayLogList_(false)
 	, logListDisplayedSize_(0)
+	, lastCalcWidth_(0)
 	, forwardTick_(0)
 	, hSyncThread_(NULL)
 	, bQuitSyncThread_(false)
@@ -122,6 +123,7 @@ CNicoJK::CNicoJK()
 {
 	szIniFileName_[0] = TEXT('\0');
 	cookie_[0] = '\0';
+	lastCalcText_[0] = TEXT('\0');
 	jkLeaveThreadID_[0] = '\0';
 	commentServerResponse_[0] = '\0';
 	getflvUserID_[0] = '\0';
@@ -1392,6 +1394,7 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 		{
 			logList_.clear();
 			logListDisplayedSize_ = 0;
+			lastCalcText_[0] = TEXT('\0');
 			commentWindow_.SetStyle(s_.commentFontName, s_.commentFontNameMulti, s_.bCommentFontBold, s_.bCommentFontAntiAlias,
 			                        s_.commentFontOutline, s_.bUseOsdCompositor, s_.bUseTexture, s_.bUseDrawingThread);
 			commentWindow_.SetCommentSize(s_.commentSize, s_.commentSizeMin, s_.commentSizeMax, s_.commentLineMargin);
@@ -1547,10 +1550,14 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 							// 左側文字列の描画幅指定
 							int fixedLen = StrCSpn(&pText[1], TEXT("}"));
 							if (textLen >= 2 + 2 * fixedLen) {
-								RECT rcCalc = rc;
-								DrawText(lpdis->hDC, &pText[1], fixedLen, &rcCalc, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
-								DrawText(lpdis->hDC, &pText[2 + fixedLen], fixedLen, &rcCalc, DT_SINGLELINE | DT_NOPREFIX);
-								rc.left = rcCalc.right;
+								if (StrCmpN(lastCalcText_, &pText[1], fixedLen + 1)) {
+									RECT rcCalc = rc;
+									DrawText(lpdis->hDC, &pText[1], fixedLen, &rcCalc, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+									lstrcpyn(lastCalcText_, &pText[1], min(fixedLen + 2, _countof(lastCalcText_)));
+									lastCalcWidth_ = rcCalc.right - rcCalc.left;
+								}
+								DrawText(lpdis->hDC, &pText[2 + fixedLen], fixedLen, &rc, DT_SINGLELINE | DT_NOPREFIX);
+								rc.left += lastCalcWidth_;
 								pText += 2 + 2 * fixedLen;
 							}
 						}
