@@ -1332,6 +1332,30 @@ void CNicoJK::ProcessLocalPost(LPCTSTR comm)
 	}
 }
 
+// サブクラス化した勢いリストのプロシージャ
+static LRESULT CALLBACK ForceListBoxProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (uMsg) {
+	case WM_ERASEBKGND:
+		{
+			int n = ListBox_GetCount(hwnd);
+			RECT rcLast;
+			if (n > 0 && ListBox_GetItemRect(hwnd, n - 1, &rcLast) != LB_ERR) {
+				// 背景消去範囲を限定することでちらつきを抑える
+				RECT rc;
+				GetClientRect(hwnd, &rc);
+				if (rc.bottom > rcLast.bottom) {
+					rc.top = rcLast.bottom;
+					FillRect(reinterpret_cast<HDC>(wParam), &rc, reinterpret_cast<HBRUSH>(GetClassLongPtr(hwnd, GCLP_HBRBACKGROUND)));
+				}
+				return TRUE;
+			}
+		}
+		break;
+	}
+	return CallWindowProc(reinterpret_cast<WNDPROC>(GetProp(hwnd, TEXT("DefProc"))), hwnd, uMsg, wParam, lParam);
+}
+
 INT_PTR CALLBACK CNicoJK::ForceDialogProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	if (uMsg == WM_MEASUREITEM) {
@@ -1436,10 +1460,20 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 			}
 			// TVTest起動直後はVideo Containerウィンドウの配置が定まっていないようなので再度整える
 			SetTimer(hwnd, TIMER_DONE_SIZE, 500, NULL);
+
+			// 勢いリストのサブクラス化
+			HWND hList = GetDlgItem(hwnd, IDC_FORCELIST);
+			SetProp(hList, TEXT("DefProc"), reinterpret_cast<HANDLE>(GetWindowLongPtr(hList, GWLP_WNDPROC)));
+			SetWindowLongPtr(hList, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ForceListBoxProc));
 		}
 		return TRUE;
 	case WM_DESTROY:
 		{
+			// 勢いリストのサブクラス化を解除
+			HWND hList = GetDlgItem(hwnd, IDC_FORCELIST);
+			SetWindowLongPtr(hList, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(GetProp(hList, TEXT("DefProc"))));
+			RemoveProp(hList, TEXT("DefProc"));
+
 			// 位置を保存
 			GetWindowRect(hwnd, &s_.rcForce);
 			s_.commentOpacity = (s_.commentOpacity&~0xFF) | commentWindow_.GetOpacity();
