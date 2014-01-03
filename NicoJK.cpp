@@ -52,6 +52,7 @@ enum {
 	TIMER_DONE_MOVE,
 	TIMER_DONE_SIZE,
 	TIMER_DONE_POSCHANGE,
+	TIMER_UPDATE_LIST,
 };
 
 enum {
@@ -89,6 +90,8 @@ CNicoJK::CNicoJK()
 	, hKeyboardHook_(NULL)
 	, bDisplayLogList_(false)
 	, logListDisplayedSize_(0)
+	, bPendingTimerUpdateList_(false)
+	, lastUpdateListTick_(0)
 	, lastCalcWidth_(0)
 	, forwardTick_(0)
 	, hSyncThread_(NULL)
@@ -1403,6 +1406,7 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 		{
 			logList_.clear();
 			logListDisplayedSize_ = 0;
+			bPendingTimerUpdateList_ = false;
 			lastCalcText_[0] = TEXT('\0');
 			commentWindow_.SetStyle(s_.commentFontName, s_.commentFontNameMulti, s_.bCommentFontBold, s_.bCommentFontAntiAlias,
 			                        s_.commentFontOutline, s_.bUseOsdCompositor, s_.bUseTexture, s_.bUseDrawingThread);
@@ -1881,6 +1885,12 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 				SendMessage(hwnd, WM_SET_ZORDER, 0, 0);
 			}
 			break;
+		case TIMER_UPDATE_LIST:
+			KillTimer(hwnd, TIMER_UPDATE_LIST);
+			lastUpdateListTick_ = 0;
+			bPendingTimerUpdateList_ = false;
+			SendMessage(hwnd, WM_UPDATE_LIST, FALSE, 0);
+			break;
 		}
 		break;
 	case WM_RESET_STREAM:
@@ -1893,6 +1903,19 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 		return TRUE;
 	case WM_UPDATE_LIST:
 		{
+			if (!wParam) {
+				// 再描画の頻度を抑える
+				DWORD tick = lastUpdateListTick_;
+				lastUpdateListTick_ = GetTickCount();
+				if (bPendingTimerUpdateList_) {
+					return TRUE;
+				}
+				if (lastUpdateListTick_ - tick < COMMENT_REDRAW_INTERVAL) {
+					bPendingTimerUpdateList_ = true;
+					SetTimer(hwnd, TIMER_UPDATE_LIST, COMMENT_REDRAW_INTERVAL - (lastUpdateListTick_ - tick), NULL);
+					return TRUE;
+				}
+			}
 			HWND hList = GetDlgItem(hwnd, IDC_FORCELIST);
 			if (!bDisplayLogList_ || !IsWindowVisible(hwnd)) {
 				// リストが増え続けないようにする

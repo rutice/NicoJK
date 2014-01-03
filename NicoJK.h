@@ -6,6 +6,8 @@ class CNicoJK : public TVTest::CTVTestPlugin
 public:
 	// リストボックスのログ表示の最大数
 	static const int COMMENT_TRIMEND = 1000;
+	// リストボックスのログ表示の最小描画間隔
+	static const int COMMENT_REDRAW_INTERVAL = 250;
 	// 処理できるchatタグの最大文字数
 	static const int CHAT_TAG_MAX = 2048;
 	// 勢いリストを更新する間隔(あんまり短くしちゃダメ!)
@@ -138,6 +140,8 @@ private:
 	std::vector<FORCE_ELEM> forceList_;
 	std::list<LOG_ELEM> logList_;
 	size_t logListDisplayedSize_;
+	bool bPendingTimerUpdateList_;
+	DWORD lastUpdateListTick_;
 	TCHAR lastCalcText_[64];
 	int lastCalcWidth_;
 
