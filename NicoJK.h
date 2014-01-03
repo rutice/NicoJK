@@ -74,6 +74,7 @@ private:
 	struct LOG_ELEM {
 		SYSTEMTIME st;
 		int no;
+		COLORREF cr;
 		TCHAR marker[28];
 		TCHAR text[CCommentWindow::CHAT_TEXT_MAX];
 		LOG_ELEM() {}

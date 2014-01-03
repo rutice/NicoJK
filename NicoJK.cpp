@@ -1129,6 +1129,7 @@ bool CNicoJK::ProcessChatTag(const char *tag, bool bShow, int showDelay)
 	static const std::regex reAlign(" align=\"(left|right)");
 	static const std::regex reUserID(" user_id=\"([0-9A-Za-z\\-_]{0,27})");
 	static const std::regex reNo(" no=\"(\\d+)\"");
+	static const std::regex reLogcmd(" logcmd=\"(.*?)\"");
 	// 置換
 	std::string rpl[2];
 	if (!rplList_.empty()) {
@@ -1183,6 +1184,7 @@ bool CNicoJK::ProcessChatTag(const char *tag, bool bShow, int showDelay)
 		FileTimeToLocalFileTime(&ftUtc, &ft);
 		FileTimeToSystemTime(&ft, &e.st);
 		e.no = 0;
+		e.cr = RGB(0xFF, 0xFF, 0xFF);
 		e.marker[0] = TEXT('\0');
 		if (!bShow) {
 			lstrcpy(e.marker, TEXT("."));
@@ -1191,6 +1193,12 @@ bool CNicoJK::ProcessChatTag(const char *tag, bool bShow, int showDelay)
 			e.marker[len] = TEXT('\0');
 			if (std::regex_search(m[1].first, m[1].second, mm, reNo)) {
 				e.no = atoi(mm[1].first);
+			}
+			// logcmd属性(ローカル拡張)
+			char logcmd[256];
+			if (std::regex_search(m[1].first, m[1].second, mm, reLogcmd)) {
+				lstrcpynA(logcmd, mm[1].first, min(static_cast<int>(mm[1].length()) + 1, _countof(logcmd)));
+				e.cr = GetColor(logcmd);
 			}
 		}
 		if (bAbone) {
@@ -1216,6 +1224,7 @@ void CNicoJK::OutputMessageLog(LPCTSTR text)
 	LOG_ELEM e;
 	GetLocalTime(&e.st);
 	e.no = 0;
+	e.cr = RGB(0xFF, 0xFF, 0xFF);
 	lstrcpy(e.marker, TEXT("#"));
 	lstrcpyn(e.text, text, _countof(e.text));
 	logList_.push_back(e);
@@ -1539,7 +1548,15 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 							// 文字列の強調色表示
 							bEmphasis = true;
 							++pText;
-							--textLen;
+						}
+						COLORREF crBk = RGB(0xFF, 0xFF, 0xFF);
+						if (pText[0] == TEXT('[')) {
+							// 右側文字列の背景色指定
+							LPCTSTR p = StrChr(++pText, TEXT(']'));
+							if (p) {
+								crBk = StrToInt(pText);
+								pText = p + 1;
+							}
 						}
 						int oldBkMode = SetBkMode(lpdis->hDC, TRANSPARENT);
 						COLORREF crOld = SetTextColor(lpdis->hDC, bSelected ? GetSysColor(COLOR_HIGHLIGHTTEXT) :
@@ -1549,7 +1566,7 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 						if (pText[0] == TEXT('{')) {
 							// 左側文字列の描画幅指定
 							int fixedLen = StrCSpn(&pText[1], TEXT("}"));
-							if (textLen >= 2 + 2 * fixedLen) {
+							if (static_cast<int>(text + textLen - pText) >= 2 + 2 * fixedLen) {
 								if (StrCmpN(lastCalcText_, &pText[1], fixedLen + 1)) {
 									RECT rcCalc = rc;
 									DrawText(lpdis->hDC, &pText[1], fixedLen, &rcCalc, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
@@ -1561,7 +1578,16 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 								pText += 2 + 2 * fixedLen;
 							}
 						}
+						COLORREF crBkOld = SetBkColor(lpdis->hDC, crBk);
+						if (!bSelected && crBk != RGB(0xFF, 0xFF, 0xFF)) {
+							SetBkMode(lpdis->hDC, OPAQUE);
+							// TODO: ホントは黒文字を仮定してはいけない(ハイコントラストテーマとか)
+							if (3*GetRValue(crBk) + 6*GetGValue(crBk) + GetBValue(crBk) < 255) {
+								SetTextColor(lpdis->hDC, RGB(0xFF, 0xFF, 0xFF));
+							}
+						}
 						DrawText(lpdis->hDC, pText, -1, &rc, DT_SINGLELINE | DT_NOPREFIX);
+						SetBkColor(lpdis->hDC, crBkOld);
 						SetTextColor(lpdis->hDC, crOld);
 						SetBkMode(lpdis->hDC, oldBkMode);
 					}
@@ -1905,9 +1931,10 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 				std::list<LOG_ELEM>::const_iterator it = logList_.end();
 				for (size_t i = logList_.size() - logListDisplayedSize_; i > 0; --i, --it);
 				for (; it != logList_.end(); ++it) {
-					TCHAR text[_countof(it->text) + 64];
-					wsprintf(text, TEXT("%s{00:00:00 (MMM)}%02d:%02d:%02d (%.3s)%s%s"),
-					         it->marker[0] == TEXT('#') ? TEXT("#") : TEXT(""), it->st.wHour, it->st.wMinute, it->st.wSecond,
+					TCHAR text[_countof(it->text) + 96];
+					wsprintf(text, TEXT("%s[%u]{00:00:00 (MMM)}%02d:%02d:%02d (%.3s)%s%s"),
+					         it->marker[0] == TEXT('#') ? TEXT("#") : TEXT(""), static_cast<DWORD>(it->cr),
+					         it->st.wHour, it->st.wMinute, it->st.wSecond,
 					         it->marker, TEXT("   ") + min(lstrlen(it->marker), 3), it->text);
 					ListBox_AddString(hList, text);
 					++logListDisplayedSize_;
