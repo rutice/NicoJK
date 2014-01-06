@@ -1573,11 +1573,11 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 							if (static_cast<int>(text + textLen - pText) >= 2 + 2 * fixedLen) {
 								if (StrCmpN(lastCalcText_, &pText[1], fixedLen + 1)) {
 									RECT rcCalc = rc;
-									DrawText(lpdis->hDC, &pText[1], fixedLen, &rcCalc, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+									DrawText(lpdis->hDC, &pText[1], fixedLen, &rcCalc, DT_SINGLELINE | DT_NOCLIP | DT_NOPREFIX | DT_CALCRECT);
 									lstrcpyn(lastCalcText_, &pText[1], min(fixedLen + 2, _countof(lastCalcText_)));
 									lastCalcWidth_ = rcCalc.right - rcCalc.left;
 								}
-								DrawText(lpdis->hDC, &pText[2 + fixedLen], fixedLen, &rc, DT_SINGLELINE | DT_NOPREFIX);
+								DrawText(lpdis->hDC, &pText[2 + fixedLen], fixedLen, &rc, DT_SINGLELINE | DT_NOCLIP | DT_NOPREFIX);
 								rc.left += lastCalcWidth_;
 								pText += 2 + 2 * fixedLen;
 							}
@@ -1590,7 +1590,7 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 								SetTextColor(lpdis->hDC, RGB(0xFF, 0xFF, 0xFF));
 							}
 						}
-						DrawText(lpdis->hDC, pText, -1, &rc, DT_SINGLELINE | DT_NOPREFIX);
+						DrawText(lpdis->hDC, pText, -1, &rc, DT_SINGLELINE | DT_NOCLIP | DT_NOPREFIX);
 						SetBkColor(lpdis->hDC, crBkOld);
 						SetTextColor(lpdis->hDC, crOld);
 						SetBkMode(lpdis->hDC, oldBkMode);
