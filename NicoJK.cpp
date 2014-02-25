@@ -258,12 +258,22 @@ bool CNicoJK::TogglePlugin(bool bEnabled)
 				} else {
 					// 改行->';'
 					StrTrimA(cookie_, " \t\n\r");
-					for (char *p = cookie_; *p; ++p) {
-						if (*p == '\n' || *p == '\r') {
-							*p = ';';
-							if (*(p+1) == '\n') *++p = ' ';
+					std::string strCookie;
+					for (char *p = cookie_; *p; ) {
+						char *q = p + StrCSpnA(p, "=\r\n");
+						char *r = q + StrCSpnA(q, "\r\n");
+						strCookie.append(p, q);
+						if (q[0] == '=' && (q[1] == 'X' || q[1] == 'x') && q[2] == '\'') {
+							// 値がX'で始まるときはDPAPIでプロテクトされたBLOBとみなす
+							strCookie += '=';
+							strCookie += UnprotectDpapiToString(&q[3]);
+						} else {
+							strCookie.append(q, r);
 						}
+						strCookie += ';';
+						if (*(p = r + StrCSpnA(r, "\n")) != '\0') ++p;
 					}
+					lstrcpynA(cookie_, strCookie.c_str(), _countof(cookie_));
 				}
 			}
 			// 破棄のタイミングがややこしいので勢い窓のフォントはここで作る
