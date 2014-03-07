@@ -112,6 +112,7 @@ CNicoJK::CNicoJK()
 	, bRecording_(false)
 	, bUsingLogfileDriver_(false)
 	, bSetStreamCallback_(false)
+	, bResyncComment_(false)
 	, currentLogfileJK_(-1)
 	, hLogfile_(INVALID_HANDLE_VALUE)
 	, hLogfileLock_(INVALID_HANDLE_VALUE)
@@ -137,6 +138,7 @@ CNicoJK::CNicoJK()
 	memset(&s_, 0, sizeof(s_));
 	// TOTを取得できていないことを表す
 	ftTot_[0].dwHighDateTime = 0xFFFFFFFF;
+	ftTot_[1].dwHighDateTime = 0xFFFFFFFF;
 	pcrPids_[0] = -1;
 }
 
@@ -1796,6 +1798,14 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 		case TIMER_FORWARD:
 			bFlipFlop_ = !bFlipFlop_;
 			if (hSyncThread_ || !bHalfSkip_ || bFlipFlop_) {
+				bool resyncComment = false;
+				{
+					CBlockLock lock(&streamLock_);
+					if (bResyncComment_) {
+						resyncComment = true;
+						bResyncComment_ = false;
+					}
+				}
 				// オフセットを調整する
 				bool bNotify = false;
 				if (0 < forwardOffsetDelta_ && forwardOffsetDelta_ <= 30000) {
@@ -1810,6 +1820,10 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 					forwardOffset_ += forwardOffsetDelta_;
 					forwardOffsetDelta_ = 0;
 					bNotify = true;
+					ReadFromLogfile(-1);
+					commentWindow_.ClearChat();
+				} else if (resyncComment) {
+					// シーク時のコメント再生位置の再調整
 					ReadFromLogfile(-1);
 					commentWindow_.ClearChat();
 				}
@@ -2348,8 +2362,29 @@ BOOL CALLBACK CNicoJK::StreamCallback(BYTE *pData, void *pClientData)
 		bool bReset = tick - pThis->pcrTick_ >= 2000;
 		pThis->pcrTick_ = tick;
 		if (pid == pThis->pcrPid_) {
-			// 1秒以上PCRが飛んでいる→シーク?
-			bReset = bReset || pcr - pThis->pcr_ >= 45000;
+			long long pcrDiff = static_cast<long long>(pcr) - pThis->pcr_;
+			if (pcr < 45000 && (0xFFFFFFFF - 45000) < pThis->pcr_) {
+				// ラップアラウンド
+				pcrDiff += 0x100000000LL;
+			}
+
+			if (0 <= pcrDiff && pcrDiff < 45000) {
+				// 1秒以内は通常の再生と見なす
+			} else if (abs(pcrDiff) < 15 * 60 * 45000) {
+				// -15～0分、+1秒～15分PCRが飛んでいる場合、シークとみなし、
+				// シークした分だけTOTをずらして読み込み直す
+				if (pThis->ftTot_[0].dwHighDateTime != 0xFFFFFFFF) {
+					long long totDiff = pcrDiff * FILETIME_MILLISECOND / 45;
+					pThis->ftTot_[0] += totDiff;
+					if (pThis->ftTot_[1].dwHighDateTime != 0xFFFFFFFF) {
+						pThis->ftTot_[1] += totDiff;
+					}
+					pThis->bResyncComment_ = true;
+				}
+			} else {
+				// それ以上飛んでたら別ストリームと見なしてリセット
+				bReset = true;
+			}
 			pThis->pcr_ = pcr;
 		}
 		if (bReset) {

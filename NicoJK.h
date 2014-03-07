@@ -180,6 +180,7 @@ private:
 	bool bRecording_;
 	bool bUsingLogfileDriver_;
 	bool bSetStreamCallback_;
+	bool bResyncComment_;
 	int currentLogfileJK_;
 	HANDLE hLogfile_;
 	HANDLE hLogfileLock_;
