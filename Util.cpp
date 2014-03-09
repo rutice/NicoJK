@@ -492,3 +492,29 @@ bool GetProcessOutput(LPTSTR commandLine, LPCTSTR currentDir, char *buf, int buf
 	}
 	return bRet;
 }
+
+// DPAPIでプロテクトされた文字列を復号する
+std::string UnprotectDpapiToString(const char *src)
+{
+	std::vector<BYTE> blob;
+	for (int i = 0;; ++i) {
+		char c = src[i];
+		if ('0' <= c && c <= '9') c -= '0';
+		else if ('A' <= c && c <= 'F') c -= 'A' - 10;
+		else if ('a' <= c && c <= 'f') c -= 'a' - 10;
+		else break;
+
+		if (i % 2) blob[i / 2] += c;
+		else blob.push_back(static_cast<BYTE>(c * 16));
+	}
+	DATA_BLOB in, out = {};
+	in.cbData = static_cast<DWORD>(blob.size());
+	in.pbData = blob.data();
+	if (!in.cbData || !CryptUnprotectData(&in, NULL, NULL, NULL, NULL, CRYPTPROTECT_UI_FORBIDDEN, &out) || !out.pbData) {
+		return "";
+	}
+	std::string ret(reinterpret_cast<char*>(out.pbData), out.cbData);
+	SecureZeroMemory(out.pbData, out.cbData);
+	LocalFree(out.pbData);
+	return ret;
+}
