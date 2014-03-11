@@ -61,6 +61,7 @@ private:
 		int maxAutoReplace;
 		TCHAR abone[CCommentWindow::CHAT_TEXT_MAX];
 		int dropLogfileMode;
+		int defaultPlaybackDelay;
 		int forwardList[26];
 		RECT rcForce;
 		int forceOpacity;

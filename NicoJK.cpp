@@ -497,6 +497,7 @@ void CNicoJK::LoadFromIni()
 	s_.maxAutoReplace		= GetBufferedProfileInt(pBuf, TEXT("maxAutoReplace"), 20);
 	GetBufferedProfileString(pBuf, TEXT("abone"), TEXT("### NG ### &"), s_.abone, _countof(s_.abone));
 	s_.dropLogfileMode		= GetBufferedProfileInt(pBuf, TEXT("dropLogfileMode"), 0);
+	s_.defaultPlaybackDelay	= GetBufferedProfileInt(pBuf, TEXT("defaultPlaybackDelay"), 500);
 	// 実況ログフォルダのパスを作成
 	TCHAR path[MAX_PATH], dir[MAX_PATH];
 	GetBufferedProfileString(pBuf, TEXT("logfileFolder"), TEXT("Plugins\\NicoJK"), path, _countof(path));
@@ -711,11 +712,12 @@ bool CNicoJK::GetCurrentTot(FILETIME *pft)
 	} else if (tick - pcrTick_ >= 2000) {
 		// 2秒以上PCRを取得できていない→ポーズ中?
 		*pft = ftTot_[0];
+		*pft += -s_.defaultPlaybackDelay * FILETIME_MILLISECOND;
 		return true;
 	} else if (ftTot_[1].dwHighDateTime == 0xFFFFFFFF) {
 		// 再生速度は分からない
 		*pft = ftTot_[0];
-		*pft += (tick - totTick_[0]) * FILETIME_MILLISECOND;
+		*pft += ((int)(tick - totTick_[0]) - s_.defaultPlaybackDelay) * FILETIME_MILLISECOND;
 		return true;
 	} else {
 		DWORD delta = totTick_[0] - totTick_[1];
@@ -723,7 +725,7 @@ bool CNicoJK::GetCurrentTot(FILETIME *pft)
 		LONGLONG speed = !delta ? FILETIME_MILLISECOND : (ftTot_[0] - ftTot_[1]) / delta;
 		speed = min(max(speed, FILETIME_MILLISECOND / 10), FILETIME_MILLISECOND * 10);
 		*pft = ftTot_[0];
-		*pft += (tick - totTick_[0]) * speed;
+		*pft += ((int)(tick - totTick_[0]) - s_.defaultPlaybackDelay) * speed;
 		return true;
 	}
 }
