@@ -1,6 +1,9 @@
+rev.16(2014-03-11)
+  過去ログ再生時の初期ディレイ設定(defaultPlaybackDelay)追加 (thanks xt氏)
+  コメントの描画行数設定(commentDrawLineCount)追加 (thanks NicoJK関連小物置場さん)
 rev.15(2014-03-09)
   Chromeのクッキー暗号化に対応 (thanks xt氏)
-　過去ログ再生時のシーク後のコメント出るまでの時間を短縮
+  過去ログ再生時のシーク後のコメント出るまでの時間を短縮
 rev.14(2014-03-05)
   マージしてReadmeとか修正した
 修正21(2014-01-06)
