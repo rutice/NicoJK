@@ -476,6 +476,7 @@ void CNicoJK::LoadFromIni()
 	s_.bCommentFontBold		= GetBufferedProfileInt(pBuf, TEXT("commentFontBold"), 1) != 0;
 	s_.bCommentFontAntiAlias = GetBufferedProfileInt(pBuf, TEXT("commentFontAntiAlias"), 1) != 0;
 	s_.commentDuration		= GetBufferedProfileInt(pBuf, TEXT("commentDuration"), CCommentWindow::DISPLAY_DURATION);
+	s_.commentDrawLineCount = GetBufferedProfileInt(pBuf, TEXT("commentDrawLineCount"), CCommentWindow::DEFAULT_LINE_DRAW_COUNT);
 	s_.logfileMode			= GetBufferedProfileInt(pBuf, TEXT("logfileMode"), 0);
 	GetBufferedProfileString(pBuf, TEXT("logfileDrivers"),
 	                         TEXT("BonDriver_UDP.dll:BonDriver_TCP.dll:BonDriver_File.dll:BonDriver_RecTask.dll:BonDriver_Pipe.dll"),
@@ -1426,6 +1427,7 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 			                        s_.commentFontOutline, s_.bUseOsdCompositor, s_.bUseTexture, s_.bUseDrawingThread);
 			commentWindow_.SetCommentSize(s_.commentSize, s_.commentSizeMin, s_.commentSizeMax, s_.commentLineMargin);
 			commentWindow_.SetDisplayDuration(s_.commentDuration);
+			commentWindow_.SetDrawLineCount(s_.commentDrawLineCount);
 			commentWindow_.SetOpacity(static_cast<BYTE>(s_.commentOpacity));
 			if (commentWindow_.GetOpacity() != 0 && m_pApp->GetPreview()) {
 				HWND hwndContainer = FindVideoContainer();

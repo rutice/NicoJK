@@ -45,6 +45,7 @@ private:
 		bool bCommentFontBold;
 		bool bCommentFontAntiAlias;
 		int commentDuration;
+		int commentDrawLineCount;
 		int logfileMode;
 		TCHAR logfileDrivers[512];
 		TCHAR nonTunerDrivers[512];

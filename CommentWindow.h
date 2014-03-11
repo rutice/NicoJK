@@ -8,6 +8,7 @@ class CCommentWindow
 {
 public:
 	static const int DEFAULT_LINE_COUNT = 14;
+	static const int DEFAULT_LINE_DRAW_COUNT = 9999;
 	static const int DISPLAY_DURATION = 4000;
 	static const int CHAT_TEXT_MAX = 256;
 	// 表示すべきコメントがないときウィンドウを非表示にするまでの猶予[秒]
@@ -39,6 +40,7 @@ public:
 	void SetStyle(LPCTSTR fontName, LPCTSTR fontNameMulti, bool bBold, bool bAntiAlias,
 	              int fontOutline, bool bUseOsdCompositor, bool bUseTexture, bool bUseDrawingThread);
 	void SetCommentSize(int size, int sizeMin, int sizeMax, int lineMargin);
+	void SetDrawLineCount(int lineDrawCount);
 	int GetDisplayDuration() const { return displayDuration_; }
 	void SetDisplayDuration(int duration);
 	BYTE GetOpacity() const { return opacity_; }
@@ -108,6 +110,7 @@ private:
 	int commentSizeMin_;
 	int commentSizeMax_;
 	int lineCount_;
+	double lineDrawCount_;
 	double fontScale_;
 	double fontSmallScale_;
 	TCHAR fontName_[LF_FACESIZE];

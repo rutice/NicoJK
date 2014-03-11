@@ -129,6 +129,7 @@ CCommentWindow::CCommentWindow()
 	, commentSizeMin_(1)
 	, commentSizeMax_(INT_MAX)
 	, lineCount_(DEFAULT_LINE_COUNT)
+	, lineDrawCount_(DEFAULT_LINE_DRAW_COUNT - 0.5)
 	, fontScale_(1.0)
 	, fontSmallScale_(1.0)
 	, fontStyle_(Gdiplus::FontStyleRegular)
@@ -262,6 +263,11 @@ void CCommentWindow::SetCommentSize(int size, int sizeMin, int sizeMax, int line
 	lineCount_ = max(DEFAULT_LINE_COUNT * 10000 / min(max(size,10),1000) / min(max(lineMargin,10),1000), 1);
 	fontScale_ = 100.0 / min(max(lineMargin,10),1000);
 	fontSmallScale_ = fontScale_ * FONT_SMALL_RATIO / 100;
+}
+
+void CCommentWindow::SetDrawLineCount(int lineDrawCount)
+{
+	lineDrawCount_ = lineDrawCount - 0.5;
 }
 
 void CCommentWindow::SetDisplayDuration(int duration)
@@ -816,7 +822,7 @@ void CCommentWindow::DrawChat(Gdiplus::Graphics &g, int width, int height, RECT 
 			// ウィンドウ下にはみ出すコメントは表示ライン行間に移す
 			// それでもはみ出すコメントは無視
 			double actLine = it->line >= actLineCount ? (it->line - actLineCount) + 0.5 : it->line;
-			if (actLine < 0 || actLineCount <= actLine) {
+			if (actLine < 0 || actLineCount <= actLine || lineDrawCount_ <= actLine) {
 				continue;
 			}
 			Gdiplus::FontFamily fontFamily;
