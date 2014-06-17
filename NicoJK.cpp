@@ -2298,6 +2298,7 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 			}
 		}
 		return TRUE;
+	case WM_SHOWWINDOW:
 	case WM_SIZE:
 		{
 			RECT rcParent, rc;
@@ -2317,6 +2318,17 @@ INT_PTR CNicoJK::ForceDialogProcMain(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
 			hItem = GetDlgItem(hwnd, IDC_FORCELIST);
 			GetWindowRect(hItem, &rc);
 			MapWindowPoints(NULL, hwnd, reinterpret_cast<LPPOINT>(&rc), 2);
+			if (padding > 8) {
+				// ボタン類が入力ボックスと被らないようにする
+				int swShow = rcParent.bottom-rc.top-padding < -8 ? SW_HIDE : SW_SHOW;
+				if (uMsg == WM_SHOWWINDOW || (IsWindowVisible(GetDlgItem(hwnd, IDC_RADIO_FORCE)) != FALSE) != (swShow != SW_HIDE)) {
+					ShowWindow(GetDlgItem(hwnd, IDC_RADIO_FORCE), swShow);
+					ShowWindow(GetDlgItem(hwnd, IDC_RADIO_LOG), swShow);
+					ShowWindow(GetDlgItem(hwnd, IDC_CHECK_SPECFILE), swShow);
+					ShowWindow(GetDlgItem(hwnd, IDC_CHECK_RELATIVE), swShow);
+					ShowWindow(GetDlgItem(hwnd, IDC_SLIDER_OPACITY), swShow);
+				}
+			}
 			SetWindowPos(hItem, NULL, 0, 0, rcParent.right-rc.left*2, rcParent.bottom-rc.top-padding, SWP_NOMOVE | SWP_NOZORDER);
 		}
 		break;
